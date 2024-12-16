@@ -1,0 +1,76 @@
+{
+    "$schema": "./schema/bot-config.schema.json",
+    "loopDelay": 5000,
+    "contractsJsonFile": "../fasset-deployment/coston.json",
+    "prioritizeAddressUpdater": false,
+    "nativeChainInfo": {
+        "chainName": "Coston",
+        "tokenSymbol": "CFLR",
+        "finalizationBlocks": 4,
+        "readLogsChunkSize": 10,
+        "recommendedOwnerBalance": "10",
+        "faucet": "https://faucet.flare.network"
+    },
+    "fAssets": {
+        "FTestXRP": {
+            "chainId": "testXRP",
+            "tokenName": "Test XRP",
+            "tokenSymbol": "testXRP",
+            "tokenDecimals": 6,
+            "indexerUrls": [
+                ""
+            ],
+            "walletUrls": [
+                ""
+            ],
+            "minimumAccountBalance": "10",
+            "faucet": "https://faucet.tequ.dev/",
+            "priceChangeEmitter": "FtsoV2PriceStore"
+        }
+    },
+    "agentBotSettings": {
+        "parallel": false,
+        "liquidationPreventionFactor": "1.2",
+        "vaultCollateralReserveFactor": "0.1",
+        "poolCollateralReserveFactor": "0.1",
+        "trustedPingSenders": [],
+        "minBalanceOnServiceAccount": "2",
+        "minBalanceOnWorkAccount": "200",
+        "defaultAgentSettings": {
+            "fee": "1%",
+            "poolFeeShare": "30%",
+            "mintingVaultCollateralRatio": "1.3",
+            "mintingPoolCollateralRatio": "1.6",
+            "poolExitCollateralRatio": "1.5",
+            "poolTopupCollateralRatio": "1.6",
+            "poolTopupTokenPriceFactor": "0.995",
+            "buyFAssetByAgentFactor": "0.99",
+            "handshakeType": 0
+        },
+        "fAssets": {
+            "FTestXRP": {
+                "recommendedOwnerBalance": "50",
+                "minimumFreeUnderlyingBalance": "0.01"
+            }
+        }
+    },
+    "rpcUrl": "",
+    "dataAccessLayerUrls": [
+        ""
+    ],
+    "ormOptions": {
+        "type": "sqlite",
+        "dbName": "fasset-bots-coston.CONTROLLER.db",
+        "allowGlobalContext": true,
+        "pool": {
+            "min": 0,
+            "max": 2
+        }
+    },
+    "liquidationStrategy": {
+        "className": "DefaultLiquidationStrategy"
+    },
+    "challengeStrategy": {
+        "className": "DefaultChallengeStrategy"
+    }
+}

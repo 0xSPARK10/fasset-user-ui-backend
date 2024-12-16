@@ -1,0 +1,37 @@
+#version: '3.8'
+services:
+  # PostgreSQL Service
+  postgres:
+    image: postgres:13
+    container_name: ${COMPOSE_PROJECT_NAME}-postgres
+    environment:
+      POSTGRES_DB: executor_minting_redemptions
+      POSTGRES_USER: executor
+      POSTGRES_PASSWORD: executor
+    volumes:
+        - postgres_data:/var/lib/postgresql/data
+       #- /var/lib/postgresql/data
+      #- postgres_data:/var/lib/postgresql/data
+
+  # Application Service
+  app:
+    build:
+      context: . # The directory where your Dockerfile is located
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME}-app
+    ports:
+      - "${BACK_DOCKER_PORT}:3001"
+    #Optional network param if you have connection issues
+    #dns:
+    #  - 8.8.8.8
+    #  - 8.8.4.4
+    volumes:
+          - ./.env:/app/.env
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    command: "/bin/sh -c '(yarn build) && (yarn run start)'"
+
+volumes:
+  postgres_data:
