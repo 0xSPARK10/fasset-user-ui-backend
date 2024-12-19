@@ -229,6 +229,7 @@ export class RunnerService implements OnApplicationBootstrap {
                                 logger.error(`Error in processMintings (executeMinting):`, error);
                                 if (error.message.includes("invalid crt id")) {
                                     minting.processed = true;
+                                    await this.em.persistAndFlush(minting);
                                 }
                                 if (error.message.includes("invalid minting reference")) {
                                     minting.processed = true;

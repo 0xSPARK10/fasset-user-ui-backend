@@ -195,7 +195,7 @@ export class BotService implements OnModuleInit {
                 logger.error(`'Error running getTimeData:`, error);
             }
         });
-        cron.schedule("*/3 * * * *", async () => {
+        cron.schedule("*/1 * * * *", async () => {
             if (!this.isRunning) {
                 this.isRunning = true;
                 try {
@@ -1096,6 +1096,10 @@ export class BotService implements OnModuleInit {
                         return 0;
                     }),
                     infoBot.context.assetManager.getCollateralType(CollateralClass.VAULT, info.vaultCollateralToken),
+                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentName(info.ownerManagementAddress),
+                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentIconUrl(info.ownerManagementAddress),
+                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentTermsOfUseUrl(info.ownerManagementAddress),
+                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentDescription(info.ownerManagementAddress),
                 ]);
             });
             const agentsToUpdateAdditionalInfos = await Promise.all(agentsToUpdateAdditionalInfoPromises);
@@ -1106,11 +1110,12 @@ export class BotService implements OnModuleInit {
                 if (!updatedAgent) continue;
                 try {
                     const info = agentsToUpdateInfoMap.get(agent);
-                    const [mintCount, numLiquidations, redeemRate, vaultCollateralType] = agentsToUpdateAdditionalInfos[i];
-                    if (agent.description == null) {
+                    const [mintCount, numLiquidations, redeemRate, vaultCollateralType, name, urlIcon, tos, desc] = agentsToUpdateAdditionalInfos[i];
+                    agent.description = desc;
+                    /*if (agent.description == null) {
                         const description = await this.botMap.get(fasset).context.agentOwnerRegistry.getAgentDescription(info.ownerManagementAddress);
                         agent.description = description;
-                    }
+                    }*/
                     const pool = await CollateralPool.at(agent.poolAddress);
                     const rewardsAvailable = await pool.totalFAssetFees();
                     feesAvailable = feesAvailable.add(rewardsAvailable);
@@ -1291,6 +1296,9 @@ export class BotService implements OnModuleInit {
                     }
                     const agentAllLots = mintingCap.toString() === "0" ? allLots : allLots + Number(info.freeCollateralLots);
                     agent.poolCR = poolcr;
+                    agent.agentName = name;
+                    agent.url = urlIcon;
+                    agent.infoUrl = tos;
                     agent.vaultCR = vaultcr;
                     agent.poolExitCR = poolExitCR;
                     agent.totalPoolCollateral = totalPoolCollateral;
