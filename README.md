@@ -10,9 +10,13 @@ Tested on Ubuntu 22.04.4 LTS.
 
 ## Running with DOCKER
 1. Copy `.env_template` into `.env` and fill the values.
-2. Build with `docker compose --env-file .env build`.
+2. Pull with `docker compose pull`.
 3. Run in detached mode with `docker compose --env-file .env up -d`.
 
+## Updating
+1. Run `git pull`.
+2. Pull the image with `docker compose pull`.
+3. Run in detached mode with `docker compose --env-file .env up -d`.
 
 ## Running without docker
 First run `git submodule init` then `git submodule update`.

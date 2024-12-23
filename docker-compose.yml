@@ -15,9 +15,7 @@ services:
 
   # Application Service
   app:
-    build:
-      context: . # The directory where your Dockerfile is located
-      dockerfile: Dockerfile
+    image: ghcr.io/0xspark10/fasset-user-ui-backend:main
     container_name: ${COMPOSE_PROJECT_NAME}-app
     ports:
       - "${BACK_DOCKER_PORT}:3001"
