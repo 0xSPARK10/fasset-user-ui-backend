@@ -207,6 +207,12 @@ export class RunnerService implements OnApplicationBootstrap {
                         }
                         if (proof === AttestationNotProved.NOT_FINALIZED) {
                             //console.log("Proof not finalized");
+                            if (await this.userBotMap.get(fasset).context.attestationProvider.roundFinalized(minting.proofRequestRound)) {
+                                minting.state = false;
+                                minting.proofRequestData = null;
+                                minting.proofRequestRound = null;
+                                await this.em.persistAndFlush(minting);
+                            }
                             continue;
                         }
                         if (proof === AttestationNotProved.DISPROVED) {
@@ -238,7 +244,14 @@ export class RunnerService implements OnApplicationBootstrap {
                                 continue;
                             }
                         } else {
-                            //console.log("Cannot obtain proof at this round");
+                            //Check if round+1 is finalized. If it is retry with payment proof
+                            if (await this.userBotMap.get(fasset).context.attestationProvider.roundFinalized(minting.proofRequestRound)) {
+                                minting.state = false;
+                                minting.proofRequestData = null;
+                                minting.proofRequestRound = null;
+                                await this.em.persistAndFlush(minting);
+                            }
+                            console.log("Cannot obtain proof at this round, retrying");
                             continue;
                         }
                     } catch (error) {
@@ -456,6 +469,12 @@ export class RunnerService implements OnApplicationBootstrap {
                             .context.attestationProvider.obtainReferencedPaymentNonexistenceProof(redemption.proofRequestRound, redemption.proofRequestData);
                         if (proof === AttestationNotProved.NOT_FINALIZED) {
                             //console.log("Redemption Proof not finalized");
+                            if (await this.userBotMap.get(fasset).context.attestationProvider.roundFinalized(redemption.proofRequestRound)) {
+                                redemption.state = false;
+                                redemption.proofRequestData = null;
+                                redemption.proofRequestRound = null;
+                                await this.em.persistAndFlush(redemption);
+                            }
                             continue;
                         }
                         if (proof === AttestationNotProved.DISPROVED) {
@@ -479,6 +498,14 @@ export class RunnerService implements OnApplicationBootstrap {
                             await this.em.persistAndFlush(redemption);
                         } else {
                             //console.log("Cannot obtain proof at this round");
+                            //Check if round+1 is finalized. If it is retry with payment proof
+                            if (await this.userBotMap.get(fasset).context.attestationProvider.roundFinalized(redemption.proofRequestRound)) {
+                                redemption.state = false;
+                                redemption.proofRequestData = null;
+                                redemption.proofRequestRound = null;
+                                await this.em.persistAndFlush(redemption);
+                            }
+                            console.log("Cannot obtain proof at this round, retrying");
                             continue;
                         }
                     } catch (error) {
