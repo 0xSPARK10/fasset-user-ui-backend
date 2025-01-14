@@ -203,6 +203,12 @@ export class RunnerService implements OnApplicationBootstrap {
                                 .context.attestationProvider.obtainPaymentProof(minting.proofRequestRound, minting.proofRequestData);
                             // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         } catch (error) {
+                            if (error.message.includes("There aren't any working attestation providers")) {
+                                minting.state = false;
+                                minting.proofRequestData = null;
+                                minting.proofRequestRound = null;
+                                logger.error(`Error in processMintings (obtainPaymentProof):`, error);
+                            }
                             continue;
                         }
                         if (proof === AttestationNotProved.NOT_FINALIZED) {
@@ -285,7 +291,6 @@ export class RunnerService implements OnApplicationBootstrap {
                     await this.em.persistAndFlush(redemption);
                     continue;
                 }
-                console.log(redemption.requestId);
                 if (redemption.handshakeType != 0 && (redemption.takenOver == false || redemption.amountUBA != "0")) {
                     try {
                         if (
@@ -464,9 +469,23 @@ export class RunnerService implements OnApplicationBootstrap {
                     try {
                         //await this.userService.proveAndExecuteMinting(minting.collateralReservationId, minting.txhash, minting.paymentAddress, minting.userUnderlyingAddress);
                         //console.log("Payment nonexistance proof is available, obtaining proof");
-                        const proof = await this.userBotMap
-                            .get(fasset)
-                            .context.attestationProvider.obtainReferencedPaymentNonexistenceProof(redemption.proofRequestRound, redemption.proofRequestData);
+                        let proof;
+                        try {
+                            proof = await this.userBotMap
+                                .get(fasset)
+                                .context.attestationProvider.obtainReferencedPaymentNonexistenceProof(
+                                    redemption.proofRequestRound,
+                                    redemption.proofRequestData
+                                );
+                        } catch (error) {
+                            if (error.message.includes("There aren't any working attestation providers")) {
+                                redemption.state = false;
+                                redemption.proofRequestData = null;
+                                redemption.proofRequestRound = null;
+                                logger.error(`Error in processMintings (obtainPaymentProof):`, error);
+                            }
+                            continue;
+                        }
                         if (proof === AttestationNotProved.NOT_FINALIZED) {
                             //console.log("Redemption Proof not finalized");
                             if (await this.userBotMap.get(fasset).context.attestationProvider.roundFinalized(redemption.proofRequestRound)) {
@@ -484,18 +503,25 @@ export class RunnerService implements OnApplicationBootstrap {
                         if (attestationProved(proof)) {
                             //console.log("Executing redemption default");
                             // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                            const res = await this.executeRedemptionDefault(fasset, proof, redemption.requestId);
-                            const event: RedemptionDefaultEvent = {
-                                agentVault: res.agentVault,
-                                redeemer: res.redeemer,
-                                requestId: toBN(res.requestId).toString(),
-                                redemptionAmountUBA: toBN(res.redemptionAmountUBA).toString(),
-                                redeemedVaultCollateralWei: toBN(res.redeemedVaultCollateralWei).toString(),
-                                redeemedPoolCollateralWei: toBN(res.redeemedPoolCollateralWei).toString(),
-                            };
-                            await this.saveRedemptionDefaultEvent(event, fasset, redemption);
-                            redemption.processed = true;
-                            await this.em.persistAndFlush(redemption);
+                            try {
+                                const res = await this.executeRedemptionDefault(fasset, proof, redemption.requestId);
+                                const event: RedemptionDefaultEvent = {
+                                    agentVault: res.agentVault,
+                                    redeemer: res.redeemer,
+                                    requestId: toBN(res.requestId).toString(),
+                                    redemptionAmountUBA: toBN(res.redemptionAmountUBA).toString(),
+                                    redeemedVaultCollateralWei: toBN(res.redeemedVaultCollateralWei).toString(),
+                                    redeemedPoolCollateralWei: toBN(res.redeemedPoolCollateralWei).toString(),
+                                };
+                                await this.saveRedemptionDefaultEvent(event, fasset, redemption);
+                                redemption.processed = true;
+                                await this.em.persistAndFlush(redemption);
+                            } catch (error) {
+                                if (error.message.includes("invalid redemption status")) {
+                                    redemption.processed = true;
+                                    await this.em.persistAndFlush(redemption);
+                                }
+                            }
                         } else {
                             //console.log("Cannot obtain proof at this round");
                             //Check if round+1 is finalized. If it is retry with payment proof

@@ -2,7 +2,7 @@ import { HttpService } from "@nestjs/axios";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import https from "https";
-import axios, { AxiosRequestConfig } from "axios";
+import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
 import { AddressBTC, FeeBTC, IndexerApiResponse, TransactionBTC, UTXOBTCXPUB, XpubBTC } from "src/interfaces/structure";
 import { lastValueFrom } from "rxjs";
 import { logger } from "src/logger/winston.logger";
@@ -17,6 +17,8 @@ export class ExternalApiService {
     private password: string;
     private apiUrl: string;
     private envType: string;
+    private dogeBBKey: string;
+    private btcBBKey: string;
     constructor(
         private readonly httpService: HttpService,
         private readonly configService: ConfigService
@@ -27,6 +29,8 @@ export class ExternalApiService {
         this.password = this.configService.get<string>("PASS_API");
         this.apiUrl = this.configService.get<string>("API_URL");
         this.envType = this.configService.get<string>("APP_TYPE");
+        this.dogeBBKey = this.configService.get<string>("DOGE_KEY");
+        this.btcBBKey = this.configService.get<string>("BTC_KEY");
     }
 
     private getAuthHeaders(): AxiosRequestConfig["headers"] {
@@ -52,12 +56,34 @@ export class ExternalApiService {
         }
     }
 
-    async getBalancesBlockBook(fasset: string, address: string) {
+    private getBlockBookAxiosDOGE(): AxiosInstance {
         const agent = new https.Agent({ rejectUnauthorized: false });
 
         const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
+            httpsAgent: agent, // Use the Agent in the Axios instance configuration,
+            headers: {
+                "x-apikey": this.dogeBBKey,
+                "x-api-key": this.dogeBBKey,
+            },
         });
+        return axiosInstance;
+    }
+
+    private getBlockBookAxiosBTC(): AxiosInstance {
+        const agent = new https.Agent({ rejectUnauthorized: false });
+
+        const axiosInstance = axios.create({
+            httpsAgent: agent, // Use the Agent in the Axios instance configuration,
+            headers: {
+                "x-apikey": this.btcBBKey,
+                "x-api-key": this.btcBBKey,
+            },
+        });
+        return axiosInstance;
+    }
+
+    async getBalancesBlockBook(fasset: string, address: string) {
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         try {
             const response = await axiosInstance.get(`${indexer}/api/v2/balancehistory/${address}`);
@@ -71,11 +97,7 @@ export class ExternalApiService {
     }
 
     async getFeeEstimation(fasset: string, blocks: number) {
-        const agent = new https.Agent({ rejectUnauthorized: false });
-
-        const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
-        });
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         try {
             const response = await axiosInstance.get(`${indexer}/api/v2/estimatefee/${blocks}`);
@@ -89,10 +111,7 @@ export class ExternalApiService {
     }
 
     async getFeeEstimationBlockHeight(fasset: string, blockHeight: number) {
-        const agent = new https.Agent({ rejectUnauthorized: false });
-        const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
-        });
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         try {
             const response = await axiosInstance.get(`${indexer}/api/v2/feestats/${blockHeight}`);
@@ -106,11 +125,7 @@ export class ExternalApiService {
 
     //Get basic xpub info from blockbook
     async getXpubBalanceBlockBook(fasset: string, address: string) {
-        const agent = new https.Agent({ rejectUnauthorized: false });
-
-        const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
-        });
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         try {
             const response = await axiosInstance.get(`${indexer}/api/v2/xpub/${address}?details=basic`);
@@ -124,11 +139,7 @@ export class ExternalApiService {
     }
 
     async getUtxosBlockBook(fasset: string, address: string, confirmed: boolean) {
-        const agent = new https.Agent({ rejectUnauthorized: false });
-
-        const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
-        });
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         const endp = confirmed ? `${indexer}/api/v2/utxo/${address}?confirmed=true` : `${indexer}/api/v2/utxo/${address}`;
         try {
@@ -142,11 +153,7 @@ export class ExternalApiService {
     }
 
     async submitTX(fasset: string, tx: string) {
-        const agent = new https.Agent({ rejectUnauthorized: false });
-
-        const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
-        });
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         try {
             const response = await axiosInstance.get(`${indexer}/api/v2/sendtx/${tx}`);
@@ -160,11 +167,7 @@ export class ExternalApiService {
     }
 
     async getTransactionHexBlockBook(fasset: string, txid: string) {
-        const agent = new https.Agent({ rejectUnauthorized: false });
-
-        const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
-        });
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         try {
             const response = await axiosInstance.get(`${indexer}/api/v2/tx/${txid}`);
@@ -177,11 +180,7 @@ export class ExternalApiService {
     }
 
     async getAddressInfoBlockBook(fasset: string, address: string) {
-        const agent = new https.Agent({ rejectUnauthorized: false });
-
-        const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
-        });
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         try {
             const response = await axiosInstance.get(`${indexer}/api/v2/address/${address}?details=basic`);
@@ -194,11 +193,7 @@ export class ExternalApiService {
     }
 
     async getBlockBookHeight(fasset: string) {
-        const agent = new https.Agent({ rejectUnauthorized: false });
-
-        const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration
-        });
+        const axiosInstance = fasset.includes("BTC") ? this.getBlockBookAxiosBTC() : this.getBlockBookAxiosDOGE();
         const indexer = fasset.includes("BTC") ? this.btcIndexer : this.dogeIndexer;
         try {
             const response = await axiosInstance.get(`${indexer}/api/v2`);

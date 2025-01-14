@@ -35,6 +35,8 @@ import { RedemptionRejected } from "./entities/RedemptionRejected";
 import { RedemptionRequested } from "./entities/RedemptionRequested";
 import { RedemptionTakenOver } from "./entities/RedemptionTakenOver";
 import { RedemptionDefaultEvent } from "./entities/RedemptionDefaultEvent";
+import { RewardsController } from "./controllers/rewards.controller";
+import { RewardsService } from "./services/rewarding.service";
 
 @Module({
     imports: [
@@ -67,8 +69,17 @@ import { RedemptionDefaultEvent } from "./entities/RedemptionDefaultEvent";
         }),
         CacheModule.register({}),
     ],
-    controllers: [UserController, BalanceController, RedemptionController, MintController, PoolController, HealthController, SwaggerController],
-    providers: [MikroOrmHealthIndicator, UserService, CleaningService, BotService, RunnerService, ExternalApiService],
+    controllers: [
+        UserController,
+        BalanceController,
+        RedemptionController,
+        MintController,
+        PoolController,
+        HealthController,
+        SwaggerController,
+        RewardsController,
+    ],
+    providers: [MikroOrmHealthIndicator, UserService, CleaningService, BotService, RunnerService, ExternalApiService, RewardsService],
     exports: [BotService, UserService],
 })
 export class AppModule implements NestModule {

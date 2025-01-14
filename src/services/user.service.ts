@@ -1270,6 +1270,9 @@ export class UserService {
                         if (!agent.publiclyAvailable) {
                             continue;
                         }
+                        if (agent.status == 3) {
+                            continue;
+                        }
                         const status = await this.getAgentLiveness(agent.vaultAddress, now);
                         const vaultCollaterals = await this.em.find(Collateral, {
                             fasset: fasset,
@@ -1528,6 +1531,9 @@ export class UserService {
                             const vaultCollateral = vaultCollaterals[0];
                             const poolCollateral = poolCollaterals[0];
                             if (!info) {
+                                if (agent.status == 3) {
+                                    continue;
+                                }
                                 const agentPool = {
                                     vault: agent.vaultAddress,
                                     pool: agent.poolAddress,

@@ -317,6 +317,11 @@ export interface IndexerApiResponse {
     data: IndexerRedemptionDefaultReponse;
 }
 
+export interface Rewards {
+    usd: string;
+    rflr: string;
+}
+
 export interface FeeBTC {
     averageFeePerKb: number;
     decilesFeePerKb: number[];

@@ -28,6 +28,14 @@ export async function bootstrap() {
             configContent.fAssets.FXRP.indexerUrls = urlsArray;
         }
     }
+    if (process.env.DOGE_INDEXER_URLS) {
+        const urlsArray = process.env.DOGE_INDEXER_URLS.split(",");
+        if (process.env.APP_TYPE == "dev") {
+            configContent.fAssets.FTestDOGE.indexerUrls = urlsArray;
+        } else {
+            configContent.fAssets.FDOGE.indexerUrls = urlsArray;
+        }
+    }
     if (process.env.RPC_URL) {
         configContent.rpcUrl = process.env.RPC_URL;
     }
@@ -41,6 +49,14 @@ export async function bootstrap() {
             configContent.fAssets.FTestXRP.walletUrls = urlsArray;
         } else {
             configContent.fAssets.FXRP.walletUrls = urlsArray;
+        }
+    }
+    if (process.env.DOGE_WALLET_URLS) {
+        const urlsArray = process.env.DOGE_WALLET_URLS.split(",");
+        if (process.env.APP_TYPE == "dev") {
+            configContent.fAssets.FTestDOGE.walletUrls = urlsArray;
+        } else {
+            configContent.fAssets.FDOGE.walletUrls = urlsArray;
         }
     }
     writeFileSync(filePathConfig, JSON.stringify(configContent, null, 4), "utf-8");
@@ -57,6 +73,10 @@ export async function bootstrap() {
         if (process.env.XRP_RPC) {
             const urlsArray = process.env.XRP_RPC.split(",");
             secrets.apiKey.xrp_rpc = urlsArray;
+        }
+        if (process.env.DOGE_RPC) {
+            const urlsArray = process.env.DOGE_RPC.split(",");
+            secrets.apiKey.doge_rpc = urlsArray;
         }
         if (process.env.NATIVE_RPC) {
             secrets.apiKey.native_rpc = process.env.NATIVE_RPC;

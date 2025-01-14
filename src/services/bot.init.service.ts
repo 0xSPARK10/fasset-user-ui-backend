@@ -1347,7 +1347,16 @@ export class BotService implements OnModuleInit {
                 const freeLotsUBA = toBN(supplyFa.availableToMintLots).mul(lotSizeUBA);
                 const availableLotsCap = Math.min(availableToMintUBA.div(lotSizeUBA).toNumber(), supplyFa.availableToMintLots);
                 supplyFa.availableToMintLots = Number(availableLotsCap);
-                const existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+                let existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+                if (!existingPriceAsset) {
+                    const priceAsset = await priceReader.getPrice(this.fassetSymbol.get(fasset), false, settings.maxTrustedPriceAgeSeconds);
+                    prices.push({
+                        symbol: this.fassetSymbol.get(fasset),
+                        price: priceAsset.price,
+                        decimals: Number(priceAsset.decimals),
+                    });
+                    existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+                }
                 const availableToMintUSD = toBN(Math.min(availableToMintUBA.toNumber(), freeLotsUBA.toNumber()))
                     .mul(existingPriceAsset.price)
                     .div(toBNExp(1, Number(existingPriceAsset.decimals)));
