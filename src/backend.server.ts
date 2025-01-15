@@ -95,6 +95,13 @@ export async function bootstrap() {
                 private_key: process.env.XRP_PRIV_KEY,
             };
         }
+        if (process.env.DOGE_PUB_ADDR && process.env.DOGE_PRIV_KEY) {
+            const chain = process.env.APP_TYPE == "dev" ? "testDOGE" : "DOGE";
+            result[chain] = {
+                address: process.env.DOGE_PUB_ADDR,
+                private_key: process.env.DOGE_PRIV_KEY,
+            };
+        }
         if (process.env.WALLET_ENCRYPTION) {
             secrets.wallet = {
                 encryption_password: process.env.WALLET_ENCRYPTION,

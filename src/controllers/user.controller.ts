@@ -1,7 +1,16 @@
 import { Controller, Get, HttpException, HttpStatus, Param } from "@nestjs/common";
 import { ApiResponse, ApiTags } from "@nestjs/swagger";
 import { LotsException } from "src/exceptions/lots.exception";
-import { AddressResponse, AgentPoolLatest, AvailableFassets, BestAgent, ExecutorResponse, Progress, TimeData } from "src/interfaces/requestResponse";
+import {
+    AddressResponse,
+    AgentPoolLatest,
+    AssetPrice,
+    AvailableFassets,
+    BestAgent,
+    ExecutorResponse,
+    Progress,
+    TimeData,
+} from "src/interfaces/requestResponse";
 import { logger } from "src/logger/winston.logger";
 import { UserService } from "src/services/user.service";
 
@@ -175,6 +184,25 @@ export class UserController {
             return this.userService.checkStateFassets();
         } catch (error) {
             logger.error(`Error in get fasset state`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("fassetPrice/:fasset")
+    @ApiResponse({
+        type: AssetPrice,
+    })
+    getFassetPrice(@Param("fasset") fasset: string): Promise<AssetPrice> {
+        try {
+            return this.userService.getAssetPrice(fasset);
+        } catch (error) {
+            logger.error(`Error in get fasset price`, error);
             throw new HttpException(
                 {
                     status: HttpStatus.INTERNAL_SERVER_ERROR,

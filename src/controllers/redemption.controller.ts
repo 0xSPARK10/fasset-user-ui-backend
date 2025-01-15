@@ -1,6 +1,13 @@
 import { Controller, Get, HttpException, HttpStatus, Param } from "@nestjs/common";
 import { ApiResponse, ApiTags } from "@nestjs/swagger";
-import { RedemptionDefaultStatusGrouped, RedemptionFee, RedemptionStatus, RequestRedemption, TrailingFee } from "src/interfaces/requestResponse";
+import {
+    RedemptionDefaultStatusGrouped,
+    RedemptionFee,
+    RedemptionFeeData,
+    RedemptionStatus,
+    RequestRedemption,
+    TrailingFee,
+} from "src/interfaces/requestResponse";
 import { logger } from "src/logger/winston.logger";
 import { UserService } from "src/services/user.service";
 
@@ -96,6 +103,25 @@ export class RedemptionController {
             return this.userService.getTrailingFees(fasset);
         } catch (error) {
             logger.error(`Error in getTrailingFees for ${fasset}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("redemptionFeeData")
+    @ApiResponse({
+        type: [RedemptionFeeData],
+    })
+    getRedemptionFeeData(): Promise<RedemptionFeeData[]> {
+        try {
+            return this.userService.getRedemptionFeeData();
+        } catch (error) {
+            logger.error(`Error in getRedemptionFeeData`, error);
             throw new HttpException(
                 {
                     status: HttpStatus.INTERNAL_SERVER_ERROR,

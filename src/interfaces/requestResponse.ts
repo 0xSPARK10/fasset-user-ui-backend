@@ -100,6 +100,20 @@ export class MintingStatus {
     step: number;
 }
 
+export class RedemptionFeeData {
+    @ApiProperty({ example: "FXRP" })
+    fasset: string;
+    @ApiProperty({ example: "0.5" })
+    feePercentage: string;
+    @ApiProperty({ example: "20" })
+    feeUSD: string;
+}
+
+export class AssetPrice {
+    @ApiProperty({ example: "0.3" })
+    price: number;
+}
+
 export class CRFee {
     @ApiProperty({ example: "125326247" })
     collateralReservationFee: string;

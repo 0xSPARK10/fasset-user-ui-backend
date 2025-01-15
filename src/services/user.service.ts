@@ -5,6 +5,7 @@ import {
     AddressResponse,
     AgentPoolItem,
     AgentPoolLatest,
+    AssetPrice,
     AvailableFassets,
     BestAgent,
     CommonBalance,
@@ -28,6 +29,7 @@ import {
     RedemptionDefaultStatus,
     RedemptionDefaultStatusGrouped,
     RedemptionFee,
+    RedemptionFeeData,
     RedemptionStatus,
     RequestMint,
     RequestRedemption,
@@ -2633,5 +2635,31 @@ export class UserService {
     private doubleKeccak256(address: string): string {
         const firstHash = web3.utils.keccak256(address);
         return web3.utils.keccak256(firstHash);
+    }
+
+    async getRedemptionFeeData(): Promise<RedemptionFeeData[]> {
+        const redemptionFeeData: RedemptionFeeData[] = [];
+        for (const f of this.botService.fassetList) {
+            const bot = this.botService.getInfoBot(f);
+            const settings = await bot.context.assetManager.getSettings();
+            const redemptionFee = Number(settings.redemptionFeeBIPS.toString()) / 100;
+            const lotSize = await this.getLotSize(f);
+            const fassetFee = (redemptionFee / 100) * lotSize.lotSize;
+            const priceReader = await TokenPriceReader.create(settings);
+            const price = await priceReader.getPrice(this.botService.getAssetSymbol(f), false, settings.maxTrustedPriceAgeSeconds);
+            const priceMul = price.price.toNumber() / 10 ** price.decimals.toNumber();
+            const valueUSD = fassetFee * priceMul;
+            redemptionFeeData.push({ fasset: f, feePercentage: redemptionFee.toString(), feeUSD: valueUSD.toFixed(3) });
+        }
+        return redemptionFeeData;
+    }
+
+    async getAssetPrice(fasset: string): Promise<AssetPrice> {
+        const bot = this.botService.getInfoBot(fasset);
+        const settings = await bot.context.assetManager.getSettings();
+        const priceReader = await TokenPriceReader.create(settings);
+        const price = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
+        const priceMul = price.price.toNumber() / 10 ** price.decimals.toNumber();
+        return { price: priceMul };
     }
 }
