@@ -537,4 +537,20 @@ export class ExternalApiService {
             return 0;
         }
     }
+
+    async getTotalRedeemedLots(): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(this.httpService.get(this.apiUrl + "/dashboard/total-redeemed-lots", { headers: this.getAuthHeaders() }));
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get pool transaction count`, error);
+            return 0;
+        }
+    }
 }

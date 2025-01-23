@@ -98,6 +98,7 @@ export class BotService implements OnModuleInit {
     tvlPools: string = "0";
     tvlPoolsNat: string = "0";
     numMints: number = 0;
+    numRedeems: number = 0;
     totalPoolRewardsPaidUSD: string = "0";
     poolRewards: PoolRewards[] = [];
     holders: number = 0;
@@ -696,6 +697,15 @@ export class BotService implements OnModuleInit {
             }
         }
         this.holders = holders;
+
+        const redeemedLotsTotal = await this.externalApiService.getTotalRedeemedLots();
+        let redeemedLots = 0;
+        for (const l in redeemedLotsTotal) {
+            if (redeemedLotsTotal.hasOwnProperty(l)) {
+                redeemedLots = redeemedLots + redeemedLotsTotal[l].amount;
+            }
+        }
+        this.numRedeems = redeemedLots;
 
         //Get top pools with min 500k sgb in nat wei pool collateral
         const topPools = await this.externalApiService.getBestPerformingPools(3, "500000000000000000000000");
@@ -1521,6 +1531,7 @@ export class BotService implements OnModuleInit {
             poolRewards: this.poolRewards,
             numHolders: this.holders,
             agentCollateral: this.agentPoolCollateral,
+            numRedeems: this.numRedeems,
         };
     }
 

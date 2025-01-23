@@ -112,13 +112,13 @@ export class RunnerService implements OnApplicationBootstrap {
             return transaction;
         }
         if (transaction != null) return transaction;
-        let currentBlockHeight = await this.userBotMap.get(fasset).context.blockchainIndexer.getBlockHeight();
+        let currentBlockHeight = await this.userBotMap.get(fasset).context.blockchainIndexer.getLastFinalizedBlockNumber();
         const waitBlocks = 6 + currentBlockHeight;
         while (currentBlockHeight < waitBlocks) {
             await sleep(1000);
             const transaction = await this.userBotMap.get(fasset).context.blockchainIndexer.getTransaction(txHash);
             if (transaction != null) return transaction;
-            currentBlockHeight = await this.userBotMap.get(fasset).context.blockchainIndexer.getBlockHeight();
+            currentBlockHeight = await this.userBotMap.get(fasset).context.blockchainIndexer.getLastFinalizedBlockNumber();
         }
         return null;
     }
@@ -721,7 +721,7 @@ export class RunnerService implements OnApplicationBootstrap {
     }
 
     async redemptionTimeElapsed(bot: UserBotCommands, state: RedeemData): Promise<boolean> {
-        const blockHeight = await bot.context.blockchainIndexer.getBlockHeight();
+        const blockHeight = await bot.context.blockchainIndexer.getLastFinalizedBlockNumber();
         const lastBlock = requireNotNull(await bot.context.blockchainIndexer.getBlockAt(blockHeight));
         return blockHeight > Number(state.lastUnderlyingBlock) && lastBlock.timestamp > Number(state.lastUnderlyingTimestamp);
     }

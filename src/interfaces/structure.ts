@@ -139,6 +139,7 @@ export interface EcosystemData {
     totalPoolRewardsPaidUSD: string;
     numHolders: number;
     agentCollateral: string;
+    numRedeems: number;
 }
 
 export interface AssetManagerFasset {

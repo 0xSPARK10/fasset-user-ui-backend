@@ -1,6 +1,6 @@
 import { toBNExp } from "@flarelabs/fasset-bots-core/utils";
 
-export const EXECUTION_FEE = toBNExp(1.5, 18);
+export const EXECUTION_FEE = toBNExp(2.5, 18);
 export const STATE_CONNECTOR_ADDRESS = "0x0c13aDA1C7143Cf0a0795FFaB93eEBb6FAD6e4e3";
 
 export enum RedemptionStatusEnum {

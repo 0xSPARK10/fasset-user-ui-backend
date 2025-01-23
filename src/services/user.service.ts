@@ -280,13 +280,13 @@ export class UserService {
         const bot = this.botService.getUserBot(fasset);
         const transaction = await bot.context.blockchainIndexer.getTransaction(txHash);
         if (transaction != null) return transaction;
-        let currentBlockHeight = await bot.context.blockchainIndexer.getBlockHeight();
+        let currentBlockHeight = await bot.context.blockchainIndexer.getLastFinalizedBlockNumber();
         const waitBlocks = 6 + currentBlockHeight;
         while (currentBlockHeight < waitBlocks) {
             await sleep(1000);
             const transaction = await bot.context.blockchainIndexer.getTransaction(txHash);
             if (transaction != null) return transaction;
-            currentBlockHeight = await bot.context.blockchainIndexer.getBlockHeight();
+            currentBlockHeight = await bot.context.blockchainIndexer.getLastFinalizedBlockNumber();
         }
         return null;
     }
@@ -1177,7 +1177,7 @@ export class UserService {
     }
 
     async redemptionTimeElapsed(bot: UserBotCommands, state: RedeemData): Promise<boolean> {
-        const blockHeight = await bot.context.blockchainIndexer.getBlockHeight();
+        const blockHeight = await bot.context.blockchainIndexer.getLastFinalizedBlockNumber();
         const lastBlock = requireNotNull(await bot.context.blockchainIndexer.getBlockAt(blockHeight));
         return blockHeight > Number(state.lastUnderlyingBlock) && lastBlock.timestamp > Number(state.lastUnderlyingTimestamp);
     }

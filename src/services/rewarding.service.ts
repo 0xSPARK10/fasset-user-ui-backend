@@ -13,8 +13,6 @@ import axios from "axios";
 import * as cron from "node-cron";
 import { Rewards } from "src/interfaces/structure";
 
-const REWARDS = 37142;
-
 @Injectable()
 export class RewardsService {
     private provider: ethers.JsonRpcProvider;
@@ -75,8 +73,8 @@ export class RewardsService {
     async getRewardsForUser(address: string): Promise<any> {
         const claimed = await this.getClaimedRewards(address);
         const claimable = await this.getClaimableRewards(address);
-        const rewardsUsd = await this.getRewardsAPI(address);
-        const percentage = (rewardsUsd / REWARDS) * 100;
+        const rewardTickets = await this.getRewardsAPI(address);
+        const percentage = rewardTickets.total_tickets != 0 ? (rewardTickets.address_tickets / rewardTickets.total_tickets) * 100 : 0;
         return {
             claimedRflr: claimed.rflr,
             claimedUsd: claimed.usd,
@@ -84,7 +82,7 @@ export class RewardsService {
             claimableUsd: claimable.usd,
             points: "0",
             share: percentage.toFixed(4),
-            shareUsd: rewardsUsd.toFixed(2),
+            numTickets: rewardTickets.address_tickets,
         };
     }
 
@@ -215,16 +213,16 @@ export class RewardsService {
             httpsAgent: agent, // Use the Agent in the Axios instance configuration,
         });
         try {
-            const response = await axiosInstance.get(`${this.rewardsAPI}/reward_amount/` + address);
+            const response = await axiosInstance.get(`${this.rewardsAPI}/reward_tickets/` + address);
             if (response.status == 500) {
-                return 0;
+                return { address_tickets: 0, total_tickets: 0 };
             }
-            return response.data.reward_amount;
+            return response.data;
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (error) {
             // Handle errors
             //logger.error("Error fetching rewards api:", error);
-            return 0;
+            return { address_tickets: 0, total_tickets: 0 };
         }
     }
 }
