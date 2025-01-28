@@ -634,10 +634,10 @@ export class UserService {
             selectedUtxos.push({
                 txid: utxo.txid,
                 vout: utxo.vout,
-                value: largestUtxo.value,
-                hexTx: await this.externalApiService.getTransactionHexBlockBook(fasset, largestUtxo.txid),
-                path: largestUtxo.path,
-                utxoAddress: largestUtxo.address,
+                value: utxo.value,
+                hexTx: await this.externalApiService.getTransactionHexBlockBook(fasset, utxo.txid),
+                path: utxo.path,
+                utxoAddress: utxo.address,
             });
             totalSelectedAmount = totalSelectedAmount.add(toBN(utxo.value));
         }

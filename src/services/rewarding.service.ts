@@ -75,6 +75,8 @@ export class RewardsService {
         const claimable = await this.getClaimableRewards(address);
         const rewardTickets = await this.getRewardsAPI(address);
         const percentage = rewardTickets.total_tickets != 0 ? (rewardTickets.address_tickets / rewardTickets.total_tickets) * 100 : 0;
+        const prevRewards = await this.getPrevRewardsUser(address);
+        const place = prevRewards.place == -1 ? 500 : prevRewards.place;
         return {
             claimedRflr: claimed.rflr,
             claimedUsd: claimed.usd,
@@ -83,7 +85,40 @@ export class RewardsService {
             points: "0",
             share: percentage.toFixed(4),
             numTickets: rewardTickets.address_tickets,
+            prevBiweeklyPlace: place,
+            prevBiweeklyRflr: prevRewards.rewardRFLR,
+            prevBiweeklyRflrUSD: prevRewards.rewardUSD,
+            participated: prevRewards.participated,
         };
+    }
+
+    async getPrevRewardsUser(address: string): Promise<any> {
+        const rewards = await this.getRewardsAmountAPI(address);
+        const price = await this.getFlrPrice();
+        const rewardUSD = toBN(rewards.reward.toLocaleString("fullwide", { useGrouping: false }))
+            .mul(toBN(price.price))
+            .div(toBNExp(1, price.decimals));
+        const usdFormatted = formatFixed(toBN(rewardUSD), 18, {
+            decimals: 6,
+            groupDigits: true,
+            groupSeparator: ",",
+        });
+        const rewardRFLR = formatFixed(toBN(rewards.reward.toLocaleString("fullwide", { useGrouping: false })), 18, {
+            decimals: 6,
+            groupDigits: true,
+            groupSeparator: ",",
+        });
+        const participated = rewards.place == -1 ? false || (await this.getUserParticipated(address)) : true;
+        return { place: rewards.place, rewardUSD: usdFormatted, rewardRFLR: rewardRFLR, participated: participated };
+    }
+
+    async getUserParticipated(address: string): Promise<any> {
+        const tcikets = await this.getRewardsTicketsHistory(address);
+        if (tcikets.address_tickets == 0) {
+            return false;
+        } else {
+            return true;
+        }
     }
 
     async getClaimedRewards(address: string): Promise<Rewards> {
@@ -223,6 +258,46 @@ export class RewardsService {
             // Handle errors
             //logger.error("Error fetching rewards api:", error);
             return { address_tickets: 0, total_tickets: 0 };
+        }
+    }
+
+    async getRewardsAmountAPI(address: string): Promise<any> {
+        const agent = new https.Agent({ rejectUnauthorized: false });
+
+        const axiosInstance = axios.create({
+            httpsAgent: agent, // Use the Agent in the Axios instance configuration,
+        });
+        try {
+            const response = await axiosInstance.get(`${this.rewardsAPI}/reward_amount/` + address);
+            if (response.status == 500) {
+                return { place: -1, reward: 0 };
+            }
+            return response.data;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (error) {
+            // Handle errors
+            //logger.error("Error fetching rewards api:", error);
+            return { place: -1, reward: 0 };
+        }
+    }
+
+    async getRewardsTicketsHistory(address: string): Promise<any> {
+        const agent = new https.Agent({ rejectUnauthorized: false });
+
+        const axiosInstance = axios.create({
+            httpsAgent: agent, // Use the Agent in the Axios instance configuration,
+        });
+        try {
+            const response = await axiosInstance.get(`${this.rewardsAPI}/reward_tickets_history/` + address);
+            if (response.status == 500) {
+                return { address_tickets: 0 };
+            }
+            return response.data;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (error) {
+            // Handle errors
+            //logger.error("Error fetching rewards api:", error);
+            return { address_tickets: 0 };
         }
     }
 }
