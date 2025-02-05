@@ -89,6 +89,7 @@ export class RewardsService {
             prevBiweeklyRflr: prevRewards.rewardRFLR,
             prevBiweeklyRflrUSD: prevRewards.rewardUSD,
             participated: prevRewards.participated,
+            rewardsDistributed: prevRewards.distributed,
         };
     }
 
@@ -108,16 +109,27 @@ export class RewardsService {
             groupDigits: true,
             groupSeparator: ",",
         });
-        const participated = rewards.place == -1 ? false || (await this.getUserParticipated(address)) : true;
-        return { place: rewards.place, rewardUSD: usdFormatted, rewardRFLR: rewardRFLR, participated: participated };
+        const userParticipation = await this.getUserParticipated(address);
+        const participated = rewards.place == -1 ? false || userParticipation.participated : true;
+        return {
+            place: rewards.place,
+            rewardUSD: usdFormatted,
+            rewardRFLR: rewardRFLR,
+            participated: participated,
+            distributed: userParticipation.distributed,
+        };
     }
 
     async getUserParticipated(address: string): Promise<any> {
         const tcikets = await this.getRewardsTicketsHistory(address);
         if (tcikets.address_tickets == 0) {
-            return false;
+            return { participated: false, distributed: true };
         } else {
-            return true;
+            if (tcikets.address_tickets == -1) {
+                return { participated: false, distributed: false };
+            } else {
+                return { participated: true, distributed: true };
+            }
         }
     }
 

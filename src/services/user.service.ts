@@ -736,6 +736,10 @@ export class UserService {
     async getUnderlyingBalanceUtxo(fasset: string, underlyingAddress: string, changeAddresses: string[], receiveAddresses: string[]) {
         //const mainAddressBalances = await this.getBalancesBlockBook(fasset, underlyingAddress);
         // First get balance of the connected account
+        if (this.envType == "dev") {
+            changeAddresses = changeAddresses.filter((address) => !address.startsWith("bc1"));
+            receiveAddresses = receiveAddresses.filter((address) => !address.startsWith("bc1"));
+        }
         const mainAddressBalancesUTXO = await this.externalApiService.getUtxosBlockBook(fasset, underlyingAddress, false);
         //let balance = await this.sumBalances(mainAddressBalances);
         let utxoBalance = await this.sumUTXO(mainAddressBalancesUTXO);
