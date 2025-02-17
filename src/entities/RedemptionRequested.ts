@@ -38,6 +38,12 @@ export class RedemptionRequested {
     @Property({ type: "bigint" })
     timestamp: number;
 
+    @Property({ nullable: true, type: "text" })
+    txhash: string;
+
+    @Property({ nullable: true, type: "text" })
+    fasset: string;
+
     constructor(
         agentVault: string,
         redeemer: string,
@@ -49,7 +55,9 @@ export class RedemptionRequested {
         lastUnderlyingBlock: string,
         lastUnderlyingTimestamp: string,
         paymentReference: string,
-        timestamp: number
+        timestamp: number,
+        txhash: string,
+        fasset: string
     ) {
         this.agentVault = agentVault;
         this.redeemer = redeemer;
@@ -62,5 +70,7 @@ export class RedemptionRequested {
         this.lastUnderlyingTimestamp = lastUnderlyingTimestamp;
         this.paymentReference = paymentReference;
         this.timestamp = timestamp;
+        this.txhash = txhash;
+        this.fasset = fasset;
     }
 }

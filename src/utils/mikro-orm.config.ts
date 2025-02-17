@@ -6,7 +6,9 @@ import { CollateralReservationEvent } from "src/entities/CollateralReservation";
 import { CrRejectedCancelledEvent } from "src/entities/CollateralReservationRejected";
 import { Collateral } from "src/entities/Collaterals";
 import { HandshakeEvent } from "src/entities/Handshake";
+import { IndexerState } from "src/entities/IndexerState";
 import { Minting } from "src/entities/Minting";
+import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { Pool } from "src/entities/Pool";
 import { Redemption } from "src/entities/Redemption";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
@@ -16,6 +18,7 @@ import { RedemptionRejected } from "src/entities/RedemptionRejected";
 import { RedemptionRequested } from "src/entities/RedemptionRequested";
 import { RedemptionTakenOver } from "src/entities/RedemptionTakenOver";
 import { FullRedemption } from "src/entities/RedemptionWhole";
+import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { logger } from "src/logger/winston.logger";
 
 let config: Options;
@@ -39,6 +42,9 @@ if (process.env.DB_TYPE === "sqlite") {
             RedemptionRequested,
             RedemptionTakenOver,
             RedemptionDefaultEvent,
+            UnderlyingPayment,
+            IndexerState,
+            MintingDefaultEvent,
         ],
         driver: SqliteDriver,
         debug: false,
@@ -63,6 +69,9 @@ if (process.env.DB_TYPE === "sqlite") {
             RedemptionRequested,
             RedemptionTakenOver,
             RedemptionDefaultEvent,
+            UnderlyingPayment,
+            IndexerState,
+            MintingDefaultEvent,
         ],
         driver: PostgreSqlDriver,
         debug: false,

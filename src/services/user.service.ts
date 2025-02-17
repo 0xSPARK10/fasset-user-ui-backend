@@ -15,6 +15,7 @@ import {
     CRFee,
     CRStatus,
     ExecutorResponse,
+    FassetStatus,
     FeeEstimate,
     HandshakeEvent,
     IndexerTokenBalances,
@@ -104,6 +105,9 @@ import { ConfigService } from "@nestjs/config";
 import { lastValueFrom } from "rxjs";
 import { HttpService } from "@nestjs/axios";
 import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
+import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
+import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
+import { RedemptionRequested } from "src/entities/RedemptionRequested";
 
 const IERC20 = artifacts.require("IERC20Metadata");
 const CollateralPool = artifacts.require("CollateralPool");
@@ -296,6 +300,18 @@ export class UserService {
         if (count != 0) {
             throw new LotsException("Minting with this txhash already exists.");
         }
+        let crEvent;
+        crEvent = await this.em.findOne(CollateralReservationEvent, { collateralReservationId: requestMint.collateralReservationId });
+        if (!crEvent) {
+            crEvent = (await this.getCREventFromTxHash(requestMint.fasset, requestMint.nativeHash, true)) as CREventExtended;
+        }
+        const now = new Date();
+        const underlyingPayment = new UnderlyingPayment(crEvent.paymentReference, requestMint.txhash, now.getTime());
+        await this.em.persistAndFlush(underlyingPayment);
+
+        /*if (count != 0) {
+            throw new LotsException("Minting with this txhash already exists.");
+        }
         if (requestMint.fasset.includes("XRP")) {
             const tx = await this.getXRPTransaction(requestMint.fasset, requestMint.txhash);
             if (tx == null) {
@@ -304,10 +320,6 @@ export class UserService {
             }
         }
         const vault = await this.em.findOne(Pool, { vaultAddress: requestMint.vaultAddress });
-        /*if (vault == null) {
-            logger.error(`Error in request minting - no vault found`);
-            throw error;
-        }*/
         const now = new Date();
         const timestamp = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
         const validUntil = timestamp.getTime();
@@ -347,9 +359,10 @@ export class UserService {
             amount,
             now.getTime(),
             handshakeReq,
-            requestMint.vaultAddress
+            requestMint.vaultAddress,
+            crEvent.paymentReference
         );
-        await this.em.persistAndFlush(minting);
+        await this.em.persistAndFlush(minting);*/
     }
 
     async mintingStatus(txhash: string): Promise<MintingStatus> {
@@ -357,9 +370,8 @@ export class UserService {
         const relay = this.botService.getRelay();
         const now = Math.floor(Date.now() / 1000);
         const currentRound = Number(await relay.getVotingRoundId(now));
-        if (minting == null) {
-            logger.error(`Error in mintingStatus - no minting ${txhash}`);
-            throw error;
+        if (!minting) {
+            return { status: false, step: 0 };
         }
         if (minting.processed == false && minting.state == false && minting.proved == false) {
             return { status: minting.processed, step: 0 };
@@ -394,15 +406,15 @@ export class UserService {
 
     async requestRedemption(fasset: string, txhash: string, amount: string, userAddress: string): Promise<RequestRedemption> {
         const fullRedeemData = await this.getRedemptionRequestedEvents(fasset, txhash);
-        const redemptions = fullRedeemData.redeemData;
-        const now = new Date();
+        //const redemptions = fullRedeemData.redeemData;
+        /*const now = new Date();
         const count = await this.em.count(FullRedemption, { txhash: txhash });
         if (count != 0) {
             throw new LotsException("Redemption with this txhash already exists.");
         }
         const timestamp = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        const validUntil = timestamp.getTime();
-        for (const redemptionEvent of redemptions) {
+        const validUntil = timestamp.getTime();*/
+        /*for (const redemptionEvent of redemptions) {
             const agent = await this.em.findOne(Pool, {
                 vaultAddress: redemptionEvent.agentVault,
             });
@@ -425,17 +437,17 @@ export class UserService {
                 now.getTime()
             );
             await this.em.persistAndFlush(redemption);
-        }
-        const fullRedemption = new FullRedemption(txhash, false, fasset, fullRedeemData.from, fullRedeemData.fullAmount, now.getTime());
-        await this.em.persistAndFlush(fullRedemption);
+        }*/
+        //const fullRedemption = new FullRedemption(txhash, false, fasset, fullRedeemData.from, fullRedeemData.fullAmount, now.getTime());
+        //await this.em.persistAndFlush(fullRedemption);
         if (fullRedeemData.incomplete == true) {
-            const incompleteRedemption = new IncompleteRedemption(
+            /*const incompleteRedemption = new IncompleteRedemption(
                 txhash,
                 fullRedeemData.dataIncomplete.redeemer,
                 fullRedeemData.dataIncomplete.remainingLots,
                 now.getTime()
-            );
-            await this.em.persistAndFlush(incompleteRedemption);
+            );*/
+            //await this.em.persistAndFlush(incompleteRedemption);
             return { incomplete: fullRedeemData.incomplete, remainingLots: fullRedeemData.dataIncomplete.remainingLots };
         }
         return { incomplete: fullRedeemData.incomplete };
@@ -599,66 +611,6 @@ export class UserService {
         }
     }
 
-    async calculateUtxosForAmount(fasset: string, xpub: string, amount: string): Promise<UTXOSLedger> {
-        const utxos = await this.externalApiService.getUtxosBlockBook(fasset, xpub, true);
-        const fee = await this.estimateFeeForBlocks(fasset);
-        const feeBTC = Math.floor(Number(fee.extraBTC) * 10 ** 8);
-        const amountBN = toBN(Math.floor(Number(amount))).add(toBN(feeBTC));
-        const sortedUtxos = utxos.sort((a, b) => {
-            const valueA = toBN(a.value);
-            const valueB = toBN(b.value);
-            return valueB.sub(valueA).toNumber();
-        });
-
-        const selectedUtxos: SelectedUTXO[] = [];
-        let totalSelectedAmount = toBN(0);
-
-        const largestUtxo = sortedUtxos[0];
-        selectedUtxos.push({
-            txid: largestUtxo.txid,
-            vout: largestUtxo.vout,
-            value: largestUtxo.value,
-            hexTx: await this.externalApiService.getTransactionHexBlockBook(fasset, largestUtxo.txid),
-            path: largestUtxo.path,
-            utxoAddress: largestUtxo.address,
-        });
-        totalSelectedAmount = totalSelectedAmount.add(toBN(largestUtxo.value));
-
-        const remainingUtxos = sortedUtxos.slice(1);
-        const randomUtxos = this.shuffleArray(remainingUtxos);
-
-        for (const utxo of randomUtxos) {
-            if (totalSelectedAmount.gte(amountBN.add(REMAIN_SATOSHIS))) {
-                break;
-            }
-            selectedUtxos.push({
-                txid: utxo.txid,
-                vout: utxo.vout,
-                value: utxo.value,
-                hexTx: await this.externalApiService.getTransactionHexBlockBook(fasset, utxo.txid),
-                path: utxo.path,
-                utxoAddress: utxo.address,
-            });
-            totalSelectedAmount = totalSelectedAmount.add(toBN(utxo.value));
-        }
-        const change = totalSelectedAmount.sub(amountBN);
-        if (totalSelectedAmount.lt(amountBN)) {
-            throw new LotsException("Insufficient funds to cover the amount and fees.");
-        }
-        selectedUtxos.sort((a, b) => {
-            const hashA = this.doubleKeccak256(a.utxoAddress);
-            const hashB = this.doubleKeccak256(b.utxoAddress);
-            return hashA.localeCompare(hashB);
-        });
-        const selectedAddresses = [];
-        for (const u of selectedUtxos) {
-            if (!selectedAddresses.includes(u.utxoAddress)) {
-                selectedAddresses.push(u.utxoAddress);
-            }
-        }
-        return { selectedUtxos: selectedUtxos, estimatedFee: feeBTC, returnAddresses: selectedAddresses };
-    }
-
     shuffleArray<T>(array: T[]): T[] {
         const shuffledArray = array.slice();
         for (let i = shuffledArray.length - 1; i > 0; i--) {
@@ -736,10 +688,10 @@ export class UserService {
     async getUnderlyingBalanceUtxo(fasset: string, underlyingAddress: string, changeAddresses: string[], receiveAddresses: string[]) {
         //const mainAddressBalances = await this.getBalancesBlockBook(fasset, underlyingAddress);
         // First get balance of the connected account
-        if (this.envType == "dev") {
+        /*if (this.envType == "dev") {
             changeAddresses = changeAddresses.filter((address) => !address.startsWith("bc1"));
             receiveAddresses = receiveAddresses.filter((address) => !address.startsWith("bc1"));
-        }
+        }*/
         const mainAddressBalancesUTXO = await this.externalApiService.getUtxosBlockBook(fasset, underlyingAddress, false);
         //let balance = await this.sumBalances(mainAddressBalances);
         let utxoBalance = await this.sumUTXO(mainAddressBalancesUTXO);
@@ -1240,244 +1192,6 @@ export class UserService {
         };
     }
 
-    async getAgentLiveness(address: string, now: number): Promise<any> {
-        const agentLiveness = await this.em.findOne(Liveness, {
-            vaultAddress: address,
-        });
-        let status = true;
-        if (agentLiveness == null) {
-            status = false;
-        } else {
-            if (now - agentLiveness.lastTimestamp > 2 * 60 * 60 * 1000) {
-                status = false;
-            }
-            /*if (agentLiveness.lastPinged == 0) {
-        status = true;
-      }*/
-            /* if (agentLiveness.lastPinged != 0 && agentLiveness.lastTimestamp == 0) {
-        status = false;
-      }*/
-        }
-        return status;
-    }
-
-    //TODO: add verification return
-    async getAgents(fassets: string[]): Promise<AgentPoolItem[]> {
-        try {
-            const pools = [];
-            const now = Date.now();
-
-            for (const fasset of fassets) {
-                const agents = await this.em.find(Pool, { fasset });
-                const bot = this.botService.getUserBot(fasset);
-
-                for (const agent of agents) {
-                    try {
-                        if (!agent.publiclyAvailable) {
-                            continue;
-                        }
-                        if (agent.status == 3) {
-                            continue;
-                        }
-                        const status = await this.getAgentLiveness(agent.vaultAddress, now);
-                        const vaultCollaterals = await this.em.find(Collateral, {
-                            fasset: fasset,
-                            token: agent.vaultToken,
-                        });
-                        const poolCollaterals = await this.em.find(Collateral, {
-                            fasset: fasset,
-                            tokenFtsoSymbol: bot.context.nativeChainInfo.tokenSymbol,
-                        });
-                        const vaultCollateral = vaultCollaterals[0];
-                        const poolCollateral = poolCollaterals[0];
-                        const agentPool = {
-                            vault: agent.vaultAddress,
-                            pool: agent.poolAddress,
-                            totalPoolCollateral: agent.totalPoolCollateral,
-                            poolCR: Number(agent.poolCR).toFixed(2),
-                            vaultCR: Number(agent.vaultCR).toFixed(2),
-                            feeShare: (Number(agent.feeShare) * 100).toFixed(0),
-                            agentName: agent.agentName,
-                            vaultType: agent.vaultType,
-                            poolExitCR: Number(agent.poolExitCR).toFixed(2),
-                            freeLots: agent.freeLots,
-                            status: status,
-                            mintFee: (Number(agent.mintFee) * 100).toFixed(2),
-                            health: agent.status,
-                            mintCount: agent.mintNumber,
-                            numLiquidations: agent.numLiquidations,
-                            redeemRate: (Number(agent.redeemSuccessRate) * 100).toFixed(2),
-                            url: agent.url,
-                            poolCollateralUSD: agent.poolNatUsd,
-                            vaultCollateral: agent.vaultCollateral,
-                            collateralToken: agent.vaultCollateralToken,
-                            poolTopupCR: Number(agent.poolTopupCR).toFixed(2),
-                            mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
-                            mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
-                            vaultCCBCR: Number(vaultCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                            vaultMinCR: Number(vaultCollateral.minCollateralRatioBIPS).toFixed(2),
-                            vaultSafetyCR: Number(vaultCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                            poolCCBCR: Number(poolCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                            poolMinCR: Number(poolCollateral.minCollateralRatioBIPS).toFixed(2),
-                            poolSafetyCR: Number(poolCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                            handshakeType: agent.handshakeType == null ? 0 : Number(agent.handshakeType),
-                            description: agent.description,
-                            mintedAssets: agent.mintedUBA,
-                            mintedUSD: agent.mintedUSD,
-                            remainingAssets: agent.remainingUBA,
-                            remainingUSD: agent.remainingUSD,
-                            allLots: agent.allLots,
-                            poolOnlyCollateralUSD: agent.poolOnlyCollateralUSD,
-                            vaultOnlyCollateralUSD: agent.vaultOnlyCollateralUSD,
-                            totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
-                            limitUSD: agent.limitUSD,
-                            infoUrl: agent.infoUrl,
-                        };
-                        pools.push(agentPool);
-                    } catch (error) {
-                        logger.error(`Error in getAgents (getAgentLiveness):`, error);
-                        continue;
-                    }
-                }
-            }
-            return pools;
-        } catch (error) {
-            logger.error(`Error in getAgents:`, error);
-            throw error;
-        }
-    }
-
-    async getAgentSpecific(fasset: string, poolAddress: string): Promise<AgentPoolItem> {
-        try {
-            const pools = [];
-            const now = Date.now();
-            const agent = await this.em.findOne(Pool, { poolAddress: poolAddress });
-            const status = await this.getAgentLiveness(agent.vaultAddress, now);
-            const bot = this.botService.getUserBot(fasset);
-            const vaultCollateral = await this.em.findOne(Collateral, {
-                fasset: fasset,
-                token: agent.vaultToken,
-            });
-            const poolCollateral = await this.em.findOne(Collateral, {
-                fasset: fasset,
-                tokenFtsoSymbol: bot.context.nativeChainInfo.tokenSymbol,
-            });
-            const agentPool: AgentPoolItem = {
-                vault: agent.vaultAddress,
-                pool: agent.poolAddress,
-                tokenAddress: agent.tokenAddress,
-                totalPoolCollateral: agent.totalPoolCollateral,
-                poolCR: Number(agent.poolCR).toFixed(2),
-                vaultCR: Number(agent.vaultCR).toFixed(2),
-                feeShare: (Number(agent.feeShare) * 100).toFixed(0),
-                agentName: agent.agentName,
-                vaultType: agent.vaultType,
-                poolExitCR: Number(agent.poolExitCR).toFixed(2),
-                freeLots: agent.freeLots,
-                status: status,
-                mintFee: (Number(agent.mintFee) * 100).toFixed(2),
-                health: agent.status,
-                mintCount: agent.mintNumber,
-                numLiquidations: agent.numLiquidations,
-                redeemRate: (Number(agent.redeemSuccessRate) * 100).toFixed(2),
-                url: agent.url,
-                poolCollateralUSD: agent.poolNatUsd,
-                vaultCollateral: agent.vaultCollateral,
-                collateralToken: agent.vaultCollateralToken,
-                poolTopupCR: Number(agent.poolTopupCR).toFixed(2),
-                mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
-                mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
-                vaultCCBCR: Number(vaultCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                vaultMinCR: Number(vaultCollateral.minCollateralRatioBIPS).toFixed(2),
-                vaultSafetyCR: Number(vaultCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                poolCCBCR: Number(poolCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                poolMinCR: Number(poolCollateral.minCollateralRatioBIPS).toFixed(2),
-                poolSafetyCR: Number(poolCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                description: agent.description,
-                mintedAssets: agent.mintedUBA,
-                mintedUSD: agent.mintedUSD,
-                remainingAssets: agent.remainingUBA,
-                remainingUSD: agent.remainingUSD,
-                allLots: agent.allLots,
-                poolOnlyCollateralUSD: agent.poolOnlyCollateralUSD,
-                vaultOnlyCollateralUSD: agent.vaultOnlyCollateralUSD,
-                totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
-                limitUSD: agent.limitUSD,
-                handshakeType: agent.handshakeType == null ? 0 : Number(agent.handshakeType),
-                infoUrl: agent.infoUrl,
-            };
-            return agentPool;
-        } catch (error) {
-            logger.error(`Error in getAgents:`, error);
-            throw error;
-        }
-    }
-
-    //TODO: add verification return
-    async getAgentsLatest(fasset: string): Promise<AgentPoolLatest[]> {
-        try {
-            const agents = await this.em.find(Pool, { fasset });
-            const infoBot = this.botService.getInfoBot(fasset);
-            const pools: AgentPoolLatest[] = [];
-            const now = Date.now();
-            const vaults = await infoBot.getAvailableAgents();
-            const settings = await infoBot.context.assetManager.getSettings();
-            const tokenSupply = await infoBot.context.fAsset.totalSupply();
-            const lotSizeUBA = toBN(settings.lotSizeAMG).mul(toBN(settings.assetMintingGranularityUBA));
-            const mintingCap = toBN(settings.mintingCapAMG).mul(toBN(settings.assetMintingGranularityUBA));
-            const availableToMintUBA = mintingCap.toString() === "0" ? toBN(0) : mintingCap.sub(tokenSupply);
-            const availableToMintLots = mintingCap.toString() === "0" ? toBN(0) : availableToMintUBA.div(lotSizeUBA);
-            for (const agent of agents) {
-                try {
-                    if (agent.status != 0 || !agent.publiclyAvailable) {
-                        continue;
-                    }
-                    //const info = await infoBot.context.assetManager.getAgentInfo(agent.vaultAddress);
-                    const info = vaults.find((v) => v.agentVault === agent.vaultAddress);
-                    if (Number(info.freeCollateralLots) == 0) {
-                        continue;
-                    }
-                    const status = await this.getAgentLiveness(agent.vaultAddress, now);
-                    const poolcr = Number(agent.poolCR);
-                    const vaultcr = Number(agent.vaultCR);
-                    const poolExitCR = Number(agent.poolExitCR);
-                    const feeBIPS = info.feeBIPS;
-                    const lots =
-                        mintingCap.toString() === "0"
-                            ? Number(info.freeCollateralLots.toString())
-                            : Math.min(Number(info.freeCollateralLots.toString()), availableToMintLots.toNumber());
-                    const agentPool = {
-                        vault: agent.vaultAddress,
-                        totalPoolCollateral: agent.totalPoolCollateral,
-                        poolCR: poolcr.toFixed(2),
-                        vaultCR: vaultcr.toFixed(2),
-                        feeShare: (Number(agent.feeShare) * 100).toFixed(0),
-                        agentName: agent.agentName,
-                        vaultType: agent.vaultType,
-                        poolExitCR: poolExitCR.toFixed(2),
-                        freeLots: lots.toString(),
-                        status: status,
-                        mintFee: (Number(agent.mintFee) * 100).toFixed(2),
-                        health: Number(agent.status),
-                        url: agent.url,
-                        feeBIPS: feeBIPS.toString(),
-                        handshakeType: agent.handshakeType == null ? 0 : Number(agent.handshakeType),
-                        underlyingAddress: agent.underlyingAddress,
-                        infoUrl: agent.infoUrl,
-                    };
-                    pools.push(agentPool);
-                } catch (error) {
-                    logger.error(`Error in getAgentsLatest (getAgentLiveness):`, error);
-                    continue;
-                }
-            }
-            return pools;
-        } catch (error) {
-            logger.error(`Error in getAgentsLatest:`, error);
-            throw error;
-        }
-    }
-
     async getTokenBalanceFromIndexer(userAddress: string): Promise<IndexerTokenBalances[]> {
         const data = await this.externalApiService.getUserCollateralPoolTokens(userAddress);
         return data;
@@ -1486,559 +1200,6 @@ export class UserService {
     async getTokenBalanceFromExplorer(userAddress: string): Promise<CostonExpTokenBalance[]> {
         const data = await lastValueFrom(this.httpService.get(this.costonExplorerUrl + "?module=account&action=tokenlist&address=" + userAddress));
         return data.data.result;
-    }
-
-    //TODO: add verification return
-    async getPools(fassets: string[], address: string): Promise<AgentPoolItem[]> {
-        if (address === "undefined") {
-            return;
-        }
-        //const a = await web3.utils.toChecksumAddress(address);
-        const cptokenBalances = await this.getTokenBalanceFromIndexer(address);
-        //const allTokens = await this.getTokenBalanceFromExplorer(address);
-        //const filteredTokens = allTokens.filter((token) => token.name.startsWith("FAsset Collateral Pool Token"));
-        //const contractInfoMap = new Map<string, CostonExpTokenBalance>(filteredTokens.map((info) => [info.contractAddress.toLowerCase(), info]));
-        for (let i = 0; i < NUM_RETRIES; i++) {
-            try {
-                const pools = [];
-                //const contractInfoMap = new Map<string, IndexerTokenBalances>(cptokenBalances.map((info) => [info.token, info]));
-                const now = Date.now();
-                for (const fasset of fassets) {
-                    const agents = await this.em.find(Pool, { fasset });
-
-                    // prefetch
-                    const livenessPromises = agents.map((agent) => this.getAgentLiveness(agent.vaultAddress, now));
-                    const livenessData = await Promise.all(livenessPromises);
-
-                    // calc userPoolNatBalance in USD
-                    const bot = this.botService.getInfoBot(fasset);
-                    const settings = await bot.context.assetManager.getSettings();
-                    const price = await this.getPoolCollateralPrice(fasset, settings);
-                    const priceReader = await TokenPriceReader.create(settings);
-                    const priceAsset = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
-
-                    for (let i = 0; i < agents.length; i++) {
-                        const agent = agents[i];
-                        try {
-                            const status = livenessData[i];
-                            const info = cptokenBalances[agent.tokenAddress];
-                            //const info = contractInfoMap.get(agent.tokenAddress.toLowerCase());
-                            if (!info && !agent.publiclyAvailable) {
-                                continue;
-                            }
-                            const vaultCollaterals = await this.em.find(Collateral, {
-                                fasset: fasset,
-                                token: agent.vaultToken,
-                            });
-                            const poolCollaterals = await this.em.find(Collateral, {
-                                fasset: fasset,
-                                tokenFtsoSymbol: bot.context.nativeChainInfo.tokenSymbol,
-                            });
-                            const vaultCollateral = vaultCollaterals[0];
-                            const poolCollateral = poolCollaterals[0];
-                            if (!info) {
-                                if (agent.status == 3) {
-                                    continue;
-                                }
-                                const agentPool = {
-                                    vault: agent.vaultAddress,
-                                    pool: agent.poolAddress,
-                                    totalPoolCollateral: agent.totalPoolCollateral,
-                                    poolCR: Number(agent.poolCR).toFixed(2),
-                                    vaultCR: Number(agent.vaultCR).toFixed(2),
-                                    userPoolBalance: "0",
-                                    userPoolFees: "0",
-                                    feeShare: (Number(agent.feeShare) * 100).toFixed(0),
-                                    userPoolNatBalance: "0",
-                                    userPoolNatBalanceInUSD: "0",
-                                    agentName: agent.agentName,
-                                    vaultType: agent.vaultType,
-                                    poolExitCR: Number(agent.poolExitCR).toFixed(2),
-                                    status: status,
-                                    userPoolShare: "0",
-                                    health: agent.status,
-                                    freeLots: agent.freeLots,
-                                    mintCount: agent.mintNumber,
-                                    numLiquidations: agent.numLiquidations,
-                                    redeemRate: (Number(agent.redeemSuccessRate) * 100).toFixed(2),
-                                    url: agent.url,
-                                    poolCollateralUSD: agent.poolNatUsd,
-                                    vaultCollateral: agent.vaultCollateral,
-                                    collateralToken: agent.vaultCollateralToken,
-                                    transferableTokens: "0",
-                                    poolTopupCR: Number(agent.poolTopupCR).toFixed(2),
-                                    tokenAddress: agent.tokenAddress,
-                                    fassetDebt: "0",
-                                    nonTimeLocked: "0",
-                                    mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
-                                    mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
-                                    vaultCCBCR: Number(vaultCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                                    vaultMinCR: Number(vaultCollateral.minCollateralRatioBIPS).toFixed(2),
-                                    vaultSafetyCR: Number(vaultCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                                    poolCCBCR: Number(poolCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                                    poolMinCR: Number(poolCollateral.minCollateralRatioBIPS).toFixed(2),
-                                    poolSafetyCR: Number(poolCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                                    mintFee: (Number(agent.mintFee) * 100).toFixed(2),
-                                    handshakeType: agent.handshakeType == null ? 0 : Number(agent.handshakeType),
-                                    description: agent.description,
-                                    mintedAssets: agent.mintedUBA,
-                                    mintedUSD: agent.mintedUSD,
-                                    remainingAssets: agent.remainingUBA,
-                                    remainingUSD: agent.remainingUSD,
-                                    allLots: agent.allLots,
-                                    poolOnlyCollateralUSD: agent.poolOnlyCollateralUSD,
-                                    vaultOnlyCollateralUSD: agent.vaultOnlyCollateralUSD,
-                                    userPoolFeesUSD: "0",
-                                    totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
-                                    limitUSD: agent.limitUSD,
-                                    infoUrl: agent.infoUrl,
-                                    lifetimeClaimedPoolFormatted: "0",
-                                    lifetimeClaimedPoolUSDFormatted: "0",
-                                };
-                                pools.push(agentPool);
-                                continue;
-                            }
-
-                            const pool = await CollateralPool.at(agent.poolAddress);
-                            const poolToken = await CollateraPoolToken.at(agent.tokenAddress);
-                            const balance = toBN(await poolToken.balanceOf(address));
-                            if (balance.eqn(0)) {
-                                const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress);
-                                let lifetimeClaimedPool = "0";
-                                if (Object.keys(claimedPools).length != 0) {
-                                    const keys = Object.keys(claimedPools);
-                                    const firstKey = keys[0];
-                                    lifetimeClaimedPool = claimedPools[firstKey].value;
-                                }
-                                /*const lifetimeClaimedPool = (await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress))[0]
-                                    .claimedUBA;*/
-                                const lifetimeClaimedPoolFormatted = formatBNToDisplayDecimals(
-                                    toBN(lifetimeClaimedPool),
-                                    fasset.includes("XRP") ? 3 : 8,
-                                    Number(settings.assetDecimals)
-                                );
-                                const lifetimeClaimedPoolUSD = toBN(lifetimeClaimedPool)
-                                    .mul(priceAsset.price)
-                                    .div(toBNExp(1, Number(priceAsset.decimals)));
-                                const lifetimeClaimedPoolUSDFormatted = formatFixed(lifetimeClaimedPoolUSD, Number(settings.assetDecimals), {
-                                    decimals: 3,
-                                    groupDigits: true,
-                                    groupSeparator: ",",
-                                });
-                                const agentPool = {
-                                    vault: agent.vaultAddress,
-                                    pool: agent.poolAddress,
-                                    totalPoolCollateral: agent.totalPoolCollateral,
-                                    poolCR: Number(agent.poolCR).toFixed(2),
-                                    vaultCR: Number(agent.vaultCR).toFixed(2),
-                                    //userPoolBalance: formatFixed(balance, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                    userPoolBalance: formatBNToDisplayDecimals(balance, 3, 18),
-                                    //userPoolFees: formatFixed(fees, 6, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                    userPoolFees: "0",
-                                    feeShare: (agent.feeShare * 100).toFixed(0),
-                                    userPoolNatBalance: "0",
-                                    userPoolNatBalanceInUSD: "0",
-                                    agentName: agent.agentName,
-                                    vaultType: agent.vaultType,
-                                    poolExitCR: Number(agent.poolExitCR).toFixed(2),
-                                    status: status,
-                                    userPoolShare: "0",
-                                    health: agent.status,
-                                    freeLots: agent.freeLots,
-                                    mintCount: agent.mintNumber,
-                                    numLiquidations: agent.numLiquidations,
-                                    redeemRate: (Number(agent.redeemSuccessRate) * 100).toFixed(2),
-                                    url: agent.url,
-                                    poolCollateralUSD: agent.poolNatUsd,
-                                    vaultCollateral: agent.vaultCollateral,
-                                    collateralToken: agent.vaultCollateralToken,
-                                    //transferableTokens: formatFixed(transferableTokens, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                    transferableTokens: "0",
-                                    poolTopupCR: Number(agent.poolTopupCR).toFixed(2),
-                                    tokenAddress: agent.tokenAddress,
-                                    //fassetDebt: formatFixed(fassetDebt, 6, { decimals: 6, groupDigits: true, groupSeparator: "," })
-                                    fassetDebt: "0",
-                                    nonTimeLocked: "0",
-                                    mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
-                                    mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
-                                    vaultCCBCR: Number(vaultCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                                    vaultMinCR: Number(vaultCollateral.minCollateralRatioBIPS).toFixed(2),
-                                    vaultSafetyCR: Number(vaultCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                                    poolCCBCR: Number(poolCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                                    poolMinCR: Number(poolCollateral.minCollateralRatioBIPS).toFixed(2),
-                                    poolSafetyCR: Number(poolCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                                    mintFee: (Number(agent.mintFee) * 100).toFixed(2),
-                                    description: agent.description,
-                                    mintedAssets: agent.mintedUBA,
-                                    mintedUSD: agent.mintedUSD,
-                                    remainingAssets: agent.remainingUBA,
-                                    remainingUSD: agent.remainingUSD,
-                                    allLots: agent.allLots,
-                                    poolOnlyCollateralUSD: agent.poolOnlyCollateralUSD,
-                                    vaultOnlyCollateralUSD: agent.vaultOnlyCollateralUSD,
-                                    userPoolFeesUSD: "0",
-                                    totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
-                                    limitUSD: agent.limitUSD,
-                                    lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
-                                    lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
-                                };
-                                pools.push(agentPool);
-                                continue;
-                            }
-                            const balanceFormated = formatBNToDisplayDecimals(balance, 3, 18);
-                            const poolNatBalance = toBN(await pool.totalCollateral()); // collateral in pool (for example # of SGB in pool)
-                            const totalSupply = toBN(await poolToken.totalSupply()); // all issued collateral pool tokens
-                            //If formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
-                            const userPoolNatBalance = balanceFormated.toString() == "0" ? "0" : toBN(balance).mul(poolNatBalance).div(totalSupply);
-                            const fees = balanceFormated.toString() === "0" ? "0" : await pool.fAssetFeesOf(address);
-                            const feesUSD = toBN(fees)
-                                .mul(priceAsset.price)
-                                .div(toBNExp(1, Number(priceAsset.decimals)));
-                            const feesUSDFormatted =
-                                balanceFormated.toString() === "0"
-                                    ? "0"
-                                    : formatFixed(feesUSD, Number(settings.assetDecimals), {
-                                          decimals: 3,
-                                          groupDigits: true,
-                                          groupSeparator: ",",
-                                      });
-                            const transferableTokens = await poolToken.transferableBalanceOf(address);
-                            const nonTimeLocked = await poolToken.nonTimelockedBalanceOf(address);
-                            const totalSupplyNum = Number(totalSupply.div(toBNExp(1, 18)));
-                            const balanceNum = Number(balance.div(toBNExp(1, 18)));
-                            let percentage = (balanceNum / totalSupplyNum) * 100;
-                            const fassetDebt = await pool.fAssetFeeDebtOf(address);
-                            //If formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
-                            const userPoolNatBalanceUSD =
-                                balanceFormated.toString() == "0" ? "0" : toBN(userPoolNatBalance).mul(price.tokenPrice.price).div(toBNExp(1, 18)); //still needs to be trimmed for price.tokenPrice.decimals in formatFixed
-                            if (percentage < 0.01) {
-                                percentage = 0.01;
-                            }
-                            const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress);
-                            let lifetimeClaimedPool = "0";
-                            if (Object.keys(claimedPools).length != 0) {
-                                const keys = Object.keys(claimedPools);
-                                const firstKey = keys[0];
-                                lifetimeClaimedPool = claimedPools[firstKey].value;
-                            }
-                            /*const lifetimeClaimedPool = (await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress))[0]
-                                .claimedUBA;*/
-                            const lifetimeClaimedPoolFormatted = formatBNToDisplayDecimals(
-                                toBN(lifetimeClaimedPool),
-                                fasset.includes("XRP") ? 3 : 8,
-                                Number(settings.assetDecimals)
-                            );
-                            const lifetimeClaimedPoolUSD = toBN(lifetimeClaimedPool)
-                                .mul(priceAsset.price)
-                                .div(toBNExp(1, Number(priceAsset.decimals)));
-                            const lifetimeClaimedPoolUSDFormatted = formatFixed(lifetimeClaimedPoolUSD, Number(settings.assetDecimals), {
-                                decimals: 3,
-                                groupDigits: true,
-                                groupSeparator: ",",
-                            });
-                            const agentPool = {
-                                vault: agent.vaultAddress,
-                                pool: agent.poolAddress,
-                                totalPoolCollateral: agent.totalPoolCollateral,
-                                poolCR: Number(agent.poolCR).toFixed(2),
-                                vaultCR: Number(agent.vaultCR).toFixed(2),
-                                //userPoolBalance: formatFixed(balance, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                userPoolBalance: formatBNToDisplayDecimals(balance, 3, 18),
-                                //userPoolFees: formatFixed(fees, 6, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                userPoolFees: formatBNToDisplayDecimals(toBN(fees), fasset.includes("XRP") ? 3 : 8, Number(settings.assetDecimals)),
-                                feeShare: (agent.feeShare * 100).toFixed(0),
-                                userPoolNatBalance: formatFixed(toBN(userPoolNatBalance), 18, {
-                                    decimals: 3,
-                                    groupDigits: true,
-                                    groupSeparator: ",",
-                                }),
-                                userPoolNatBalanceInUSD: formatFixed(toBN(userPoolNatBalanceUSD), Number(price.tokenPrice.decimals), {
-                                    decimals: 6,
-                                    groupDigits: true,
-                                    groupSeparator: ",",
-                                }),
-                                agentName: agent.agentName,
-                                vaultType: agent.vaultType,
-                                poolExitCR: Number(agent.poolExitCR).toFixed(2),
-                                status: status,
-                                userPoolShare: percentage.toFixed(2),
-                                health: agent.status,
-                                freeLots: agent.freeLots,
-                                mintCount: agent.mintNumber,
-                                numLiquidations: agent.numLiquidations,
-                                redeemRate: (Number(agent.redeemSuccessRate) * 100).toFixed(2),
-                                url: agent.url,
-                                poolCollateralUSD: agent.poolNatUsd,
-                                vaultCollateral: agent.vaultCollateral,
-                                collateralToken: agent.vaultCollateralToken,
-                                //transferableTokens: formatFixed(transferableTokens, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                transferableTokens: formatBNToDisplayDecimals(transferableTokens, 3, 18),
-                                poolTopupCR: Number(agent.poolTopupCR).toFixed(2),
-                                tokenAddress: agent.tokenAddress,
-                                //fassetDebt: formatFixed(fassetDebt, 6, { decimals: 6, groupDigits: true, groupSeparator: "," })
-                                fassetDebt: formatBNToDisplayDecimals(fassetDebt, Number(settings.assetDecimals), Number(settings.assetDecimals)),
-                                nonTimeLocked: formatBNToDisplayDecimals(nonTimeLocked, 3, 18),
-                                mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
-                                mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
-                                vaultCCBCR: Number(vaultCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                                vaultMinCR: Number(vaultCollateral.minCollateralRatioBIPS).toFixed(2),
-                                vaultSafetyCR: Number(vaultCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                                poolCCBCR: Number(poolCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                                poolMinCR: Number(poolCollateral.minCollateralRatioBIPS).toFixed(2),
-                                poolSafetyCR: Number(poolCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                                mintFee: (Number(agent.mintFee) * 100).toFixed(2),
-                                handshakeType: agent.handshakeType == null ? 0 : Number(agent.handshakeType),
-                                description: agent.description,
-                                mintedAssets: agent.mintedUBA,
-                                mintedUSD: agent.mintedUSD,
-                                remainingAssets: agent.remainingUBA,
-                                remainingUSD: agent.remainingUSD,
-                                allLots: agent.allLots,
-                                poolOnlyCollateralUSD: agent.poolOnlyCollateralUSD,
-                                vaultOnlyCollateralUSD: agent.vaultOnlyCollateralUSD,
-                                userPoolFeesUSD: feesUSDFormatted,
-                                totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
-                                limitUSD: agent.limitUSD,
-                                infoUrl: agent.infoUrl,
-                                lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
-                                lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
-                            };
-                            pools.push(agentPool);
-                        } catch (error) {
-                            logger.error(`Error in getPools for specific user:`, error);
-                            continue;
-                        }
-                    }
-                }
-                const parseUserPoolBalance = (balance: string): number => {
-                    return parseFloat(balance.replace(/,/g, ""));
-                };
-                pools.sort((a, b) => parseUserPoolBalance(b.userPoolBalance) - parseUserPoolBalance(a.userPoolBalance));
-
-                const end = Date.now();
-                return pools;
-            } catch (error) {
-                logger.error(`Error in getPools, attempt ${i + 1} of ${NUM_RETRIES}: `, error);
-                if (i < NUM_RETRIES - 1) {
-                    await new Promise((resolve) => setTimeout(resolve, 2000));
-                } else {
-                    logger.error("Error in getPools: ", error);
-                }
-            }
-        }
-    }
-
-    async getPoolsSpecific(fasset: string, address: string, pool: string): Promise<AgentPoolItem> {
-        try {
-            const agents = await this.em.find(Pool, { poolAddress: pool });
-            const pools = [];
-            const now = Date.now();
-            const bot = this.botService.getInfoBot(fasset);
-            const nativeSymbol = bot.context.nativeChainInfo.tokenSymbol;
-            for (const agent of agents) {
-                try {
-                    const pool = await CollateralPool.at(agent.poolAddress);
-                    const poolToken = await CollateraPoolToken.at(agent.tokenAddress);
-                    const balance = toBN(await poolToken.balanceOf(address)); // number of collateral pool tokens
-                    const balanceFormated = formatBNToDisplayDecimals(balance, 3, 18);
-                    const status = await this.getAgentLiveness(agent.vaultAddress, now);
-                    const vaultCollaterals = await this.em.find(Collateral, {
-                        fasset: fasset,
-                        token: agent.vaultToken,
-                    });
-                    const poolCollaterals = await this.em.find(Collateral, {
-                        fasset: fasset,
-                        tokenFtsoSymbol: nativeSymbol,
-                    });
-                    const vaultCollateral = vaultCollaterals[0];
-                    const poolCollateral = poolCollaterals[0];
-                    if (balance.eq(BN_ZERO)) {
-                        const agentPool = {
-                            vault: agent.vaultAddress,
-                            pool: agent.poolAddress,
-                            totalPoolCollateral: agent.totalPoolCollateral,
-                            poolCR: Number(agent.poolCR).toFixed(2),
-                            vaultCR: Number(agent.vaultCR).toFixed(2),
-                            userPoolBalance: "0",
-                            userPoolFees: "0",
-                            feeShare: (Number(agent.feeShare) * 100).toFixed(0),
-                            userPoolNatBalance: "0",
-                            userPoolNatBalanceInUSD: "0",
-                            agentName: agent.agentName,
-                            vaultType: agent.vaultType,
-                            poolExitCR: Number(agent.poolExitCR).toFixed(2),
-                            status: status,
-                            userPoolShare: "0",
-                            health: agent.status,
-                            freeLots: agent.freeLots,
-                            mintCount: agent.mintNumber,
-                            numLiquidations: agent.numLiquidations,
-                            redeemRate: (Number(agent.redeemSuccessRate) * 100).toFixed(2),
-                            url: agent.url,
-                            poolCollateralUSD: agent.poolNatUsd,
-                            vaultCollateral: agent.vaultCollateral,
-                            collateralToken: agent.vaultCollateralToken,
-                            transferableTokens: "0",
-                            poolTopupCR: Number(agent.poolTopupCR).toFixed(2),
-                            tokenAddress: agent.tokenAddress,
-                            fassetDebt: "0",
-                            nonTimeLocked: "0",
-                            mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
-                            mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
-                            vaultCCBCR: Number(vaultCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                            vaultMinCR: Number(vaultCollateral.minCollateralRatioBIPS).toFixed(2),
-                            vaultSafetyCR: Number(vaultCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                            poolCCBCR: Number(poolCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                            poolMinCR: Number(poolCollateral.minCollateralRatioBIPS).toFixed(2),
-                            poolSafetyCR: Number(poolCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                            mintFee: (Number(agent.mintFee) * 100).toFixed(2),
-                            handshakeType: agent.handshakeType == null ? 0 : Number(agent.handshakeType),
-                            description: agent.description,
-                            mintedAssets: agent.mintedUBA,
-                            mintedUSD: agent.mintedUSD,
-                            remainingAssets: agent.remainingUBA,
-                            remainingUSD: agent.remainingUSD,
-                            allLots: agent.allLots,
-                            poolOnlyCollateralUSD: agent.poolOnlyCollateralUSD,
-                            vaultOnlyCollateralUSD: agent.vaultOnlyCollateralUSD,
-                            userPoolFeesUSD: "0",
-                            totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
-                            limitUSD: agent.limitUSD,
-                            infoUrl: agent.infoUrl,
-                            lifetimeClaimedPoolFormatted: "0",
-                            lifetimeClaimedPoolUSDFormatted: "0",
-                        };
-                        pools.push(agentPool);
-                        continue;
-                    }
-                    const poolNatBalance = toBN(await pool.totalCollateral()); // collateral in pool (for example # of SGB in pool)
-                    const totalSupply = toBN(await poolToken.totalSupply()); // all issued collateral pool tokens
-                    //IF formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
-                    const userPoolNatBalance = balanceFormated.toString() == "0" ? "0" : toBN(balance).mul(poolNatBalance).div(totalSupply);
-                    const bot = this.botService.getInfoBot(fasset);
-                    const settings = await bot.context.assetManager.getSettings();
-                    const priceReader = await TokenPriceReader.create(settings);
-                    const priceAsset = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
-                    const fees = balanceFormated.toString() == "0" ? "0" : await pool.fAssetFeesOf(address);
-                    const feesUSD = toBN(fees)
-                        .mul(priceAsset.price)
-                        .div(toBNExp(1, Number(priceAsset.decimals)));
-                    const feesUSDFormatted =
-                        balanceFormated.toString() === "0"
-                            ? "0"
-                            : formatFixed(feesUSD, Number(settings.assetDecimals), {
-                                  decimals: 3,
-                                  groupDigits: true,
-                                  groupSeparator: ",",
-                              });
-                    const transferableTokens = await poolToken.transferableBalanceOf(address);
-                    const nonTimeLocked = await poolToken.nonTimelockedBalanceOf(address);
-                    const fassetDebt = await pool.fAssetFeeDebtOf(address);
-                    const totalSupplyNum = Number(totalSupply.div(toBNExp(1, 18)));
-                    const balanceNum = Number(balance.div(toBNExp(1, 18)));
-                    let percentage = (balanceNum / totalSupplyNum) * 100;
-                    // calc userPoolNatBalance in USD
-                    const price = await this.getPoolCollateralPrice(fasset, settings);
-                    //IF formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
-                    const userPoolNatBalanceUSD =
-                        balanceFormated.toString() == "0" ? "0" : toBN(userPoolNatBalance).mul(price.tokenPrice.price).div(toBNExp(1, 18)); //still needs to be trimmed for price.tokenPrice.decimals in formatFixed
-
-                    if (percentage < 0.01) {
-                        percentage = 0.01;
-                    }
-                    const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress);
-                    let lifetimeClaimedPool = "0";
-                    if (Object.keys(claimedPools).length != 0) {
-                        const keys = Object.keys(claimedPools);
-                        const firstKey = keys[0];
-                        lifetimeClaimedPool = claimedPools[firstKey].value;
-                    }
-                    const lifetimeClaimedPoolFormatted = formatBNToDisplayDecimals(
-                        toBN(lifetimeClaimedPool),
-                        fasset.includes("XRP") ? 3 : 8,
-                        Number(settings.assetDecimals)
-                    );
-                    const lifetimeClaimedPoolUSD = toBN(lifetimeClaimedPool)
-                        .mul(priceAsset.price)
-                        .div(toBNExp(1, Number(priceAsset.decimals)));
-                    const lifetimeClaimedPoolUSDFormatted = formatFixed(lifetimeClaimedPoolUSD, Number(settings.assetDecimals), {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
-                    const agentPool = {
-                        vault: agent.vaultAddress,
-                        pool: agent.poolAddress,
-                        totalPoolCollateral: agent.totalPoolCollateral,
-                        poolCR: Number(agent.poolCR).toFixed(2),
-                        vaultCR: Number(agent.vaultCR).toFixed(2),
-                        userPoolBalance: formatBNToDisplayDecimals(balance, 3, 18),
-                        userPoolFees: formatBNToDisplayDecimals(toBN(fees), fasset.includes("XRP") ? 3 : 8, Number(settings.assetDecimals)),
-                        feeShare: (Number(agent.feeShare) * 100).toFixed(0),
-                        userPoolNatBalance: formatFixed(toBN(userPoolNatBalance), 18, {
-                            decimals: 3,
-                            groupDigits: true,
-                            groupSeparator: ",",
-                        }),
-                        userPoolNatBalanceInUSD: formatFixed(toBN(userPoolNatBalanceUSD), Number(price.tokenPrice.decimals), {
-                            decimals: 6,
-                            groupDigits: true,
-                            groupSeparator: ",",
-                        }),
-                        agentName: agent.agentName,
-                        vaultType: agent.vaultType,
-                        poolExitCR: Number(agent.poolExitCR).toFixed(2),
-                        status: status,
-                        userPoolShare: percentage.toFixed(2),
-                        health: agent.status,
-                        freeLots: agent.freeLots,
-                        mintCount: agent.mintNumber,
-                        numLiquidations: agent.numLiquidations,
-                        redeemRate: (Number(agent.redeemSuccessRate) * 100).toFixed(2),
-                        url: agent.url,
-                        poolCollateralUSD: agent.poolNatUsd,
-                        vaultCollateral: agent.vaultCollateral,
-                        collateralToken: agent.vaultCollateralToken,
-                        transferableTokens: formatBNToDisplayDecimals(transferableTokens, 3, 18),
-                        poolTopupCR: Number(agent.poolTopupCR).toFixed(2),
-                        tokenAddress: agent.tokenAddress,
-                        fassetDebt: formatBNToDisplayDecimals(fassetDebt, Number(settings.assetDecimals), Number(settings.assetDecimals)),
-                        nonTimeLocked: formatBNToDisplayDecimals(nonTimeLocked, 3, 18),
-                        mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
-                        mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
-                        vaultCCBCR: Number(vaultCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                        vaultMinCR: Number(vaultCollateral.minCollateralRatioBIPS).toFixed(2),
-                        vaultSafetyCR: Number(vaultCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                        poolCCBCR: Number(poolCollateral.ccbMinCollateralRatioBIPS).toFixed(2),
-                        poolMinCR: Number(poolCollateral.minCollateralRatioBIPS).toFixed(2),
-                        poolSafetyCR: Number(poolCollateral.safetyMinCollateralRatioBIPS).toFixed(2),
-                        mintFee: (Number(agent.mintFee) * 100).toFixed(2),
-                        handshakeType: agent.handshakeType == null ? 0 : Number(agent.handshakeType),
-                        description: agent.description,
-                        mintedAssets: agent.mintedUBA,
-                        mintedUSD: agent.mintedUSD,
-                        remainingAssets: agent.remainingUBA,
-                        remainingUSD: agent.remainingUSD,
-                        allLots: agent.allLots,
-                        poolOnlyCollateralUSD: agent.poolOnlyCollateralUSD,
-                        vaultOnlyCollateralUSD: agent.vaultOnlyCollateralUSD,
-                        userPoolFeesUSD: feesUSDFormatted,
-                        totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
-                        limitUSD: agent.limitUSD,
-                        infoUrl: agent.infoUrl,
-                        lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
-                        lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
-                    };
-                    pools.push(agentPool);
-                } catch (error) {
-                    logger.error(`Error in getPoolsSpecific for specific user:`, error);
-                    continue;
-                }
-            }
-            return pools[0];
-        } catch (error) {
-            throw error;
-        }
     }
 
     async getMaxWithdraw(fasset: string, poolAddress: string, userAddress: string, value: number): Promise<MaxWithdraw> {
@@ -2226,126 +1387,6 @@ export class UserService {
         }
     }
 
-    async getProgress(userAddress: string): Promise<Progress[]> {
-        const mints = await this.em.find(Minting, { userAddress: userAddress });
-        const redeems = await this.em.find(FullRedemption, {
-            userAddress: userAddress.toLocaleLowerCase(),
-        });
-        const incompleteRedeems = await this.em.find(IncompleteRedemption, {
-            redeemer: userAddress,
-        });
-        //const redeemTickets = await this.em.find(Redemption, { userAddress: userAddress.toLocaleLowerCase() })
-        const userProgress: Progress[] = [];
-        const now = new Date();
-        const date = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).getTime();
-        const nowTimestamp = now.getTime();
-        for (const mint of mints) {
-            if (Number(mint.timestamp) < date) {
-                continue;
-            }
-            const progress = {
-                action: "MINT",
-                timestamp: Number(mint.timestamp),
-                amount: mint.amount,
-                fasset: mint.fasset,
-                status: mint.processed,
-                txhash: mint.txhash,
-                defaulted: false,
-            };
-            userProgress.push(progress);
-        }
-        for (const redeem of redeems) {
-            if (Number(redeem.timestamp) < date) {
-                continue;
-            }
-            // All tickets need to be processed for a redemption to have status true to be regarded as completed
-            const redeemTickets = await this.em.find(Redemption, {
-                txhash: redeem.txhash,
-            });
-            //Check if redemption was incomplete
-            const incompleteData = incompleteRedeems.find((red) => red.txhash === redeem.txhash);
-            let incomplete = false;
-            if (incompleteData) {
-                incomplete = true;
-            }
-            //Preparation for each default ticket
-            for (const ticket of redeemTickets) {
-                if (ticket.defaulted == true && ticket.processed == true) {
-                    const defaultEvent = await this.em.find(RedemptionDefault, {
-                        requestId: ticket.requestId,
-                    });
-                    let redDefEvent: RedemptionDefault;
-                    if (defaultEvent.length == 0) {
-                        try {
-                            redDefEvent = await this.getAndSaveRedemptionDefaultEvent(ticket, nowTimestamp);
-                        } catch (error) {
-                            logger.error("Error in progress: ", error);
-                            continue;
-                        }
-                    } else {
-                        redDefEvent = defaultEvent[0];
-                    }
-                    //const amount = formatBNToDisplayDecimals(toBN(ticket.amountUBA), redeem.fasset == "FTestXRP" ? 2 : 8, redeem.fasset == "FTestXRP" ? 6 : 8);
-                    const collateral = await this.em.find(Collateral, {
-                        tokenFtsoSymbol: redDefEvent.collateralToken,
-                    });
-                    const vaultCollateralRedeemed = formatBNToDisplayDecimals(
-                        toBN(redDefEvent.redeemedVaultCollateralWei),
-                        redDefEvent.collateralToken.includes("ETH") ? 6 : 3,
-                        collateral[0].decimals
-                    );
-                    const poolCollateralRedeemed = formatBNToDisplayDecimals(toBN(redDefEvent.redeemedPoolCollateralWei), 3, 18);
-                    const progress = {
-                        action: "REDEEM",
-                        timestamp: Number(redeem.timestamp),
-                        amount: redeem.amount,
-                        fasset: redeem.fasset,
-                        status: ticket.processed,
-                        defaulted: ticket.defaulted,
-                        txhash: redeem.txhash,
-                        ticketID: ticket.requestId,
-                        vaultToken: redDefEvent.collateralToken,
-                        vaultTokenValueRedeemed: vaultCollateralRedeemed,
-                        poolTokenValueRedeemed: poolCollateralRedeemed,
-                        underlyingPaid: "0",
-                        incomplete: incomplete,
-                        remainingLots: incompleteData?.remainingLots ?? null,
-                        rejected: ticket.rejected,
-                        takenOver: ticket.takenOver,
-                        rejectionDefaulted: ticket.rejectionDefault,
-                    };
-                    userProgress.push(progress);
-                } else {
-                    const amount = formatBNToDisplayDecimals(
-                        toBN(ticket.amountUBA),
-                        redeem.fasset.includes("XRP") ? 2 : 8,
-                        redeem.fasset.includes("XRP") ? 6 : 8
-                    );
-
-                    const progress = {
-                        action: "REDEEM",
-                        timestamp: Number(redeem.timestamp),
-                        amount: redeem.amount,
-                        fasset: redeem.fasset,
-                        status: ticket.processed,
-                        defaulted: ticket.defaulted,
-                        txhash: redeem.txhash,
-                        ticketID: ticket.requestId,
-                        underlyingPaid: amount,
-                        incomplete: incomplete,
-                        remainingLots: incompleteData?.remainingLots ?? null,
-                        rejected: ticket.rejected,
-                        takenOver: ticket.takenOver,
-                        rejectionDefaulted: ticket.rejectionDefault,
-                    };
-                    userProgress.push(progress);
-                }
-            }
-        }
-        userProgress.sort((a, b) => b.timestamp - a.timestamp);
-        return userProgress;
-    }
-
     async submitTx(fasset: string, tx: string): Promise<submitTxResponse> {
         try {
             const response = await this.externalApiService.submitTX(fasset, tx);
@@ -2417,230 +1458,6 @@ export class UserService {
         return this.botService.getTimeSeries(time);
     }
 
-    async prepareUtxosForAmount(
-        fasset: string,
-        amount: string,
-        recipient: string,
-        memo: string,
-        fee: string,
-        changeAddresses: string[],
-        selectedUtxos: SelectedUTXOAddress[]
-    ): Promise<any> {
-        const amountBN = toBN(Math.floor(Number(amount))).add(toBN(fee));
-        let totalSelectedAmount = toBN(0);
-        for (const u of selectedUtxos) {
-            totalSelectedAmount = totalSelectedAmount.add(toBN(u.value));
-        }
-
-        if (totalSelectedAmount.lt(amountBN)) {
-            throw new Error("Insufficient funds to cover the amount with a minimum of 10k satoshis for change.");
-        }
-        const psbt = await this.createPsbt(fasset, selectedUtxos, toBN(amount), changeAddresses, recipient, totalSelectedAmount, memo, fee);
-        return { psbt, selectedUtxos };
-    }
-    private async createSelectedUtxo(fasset: string, utxo: any, address: string, index: number): Promise<SelectedUTXOAddress> {
-        return {
-            txid: utxo.txid,
-            vout: utxo.vout,
-            value: utxo.value,
-            hexTx: await this.externalApiService.getTransactionHexBlockBook(fasset, utxo.txid),
-            path: utxo.path,
-            utxoAddress: address,
-            address: address,
-            index: index,
-        };
-    }
-
-    private async createPsbt(
-        fasset: string,
-        selectedUtxos: SelectedUTXOAddress[],
-        amountBN: BN,
-        changeAddresses: string[],
-        recipient: string,
-        totalSelectedAmount: BN,
-        memo: string,
-        fee: string
-    ): Promise<any> {
-        if (fasset.includes("BTC")) {
-            const bitcoin = await import("bitcoinjs-lib");
-            const network = this.envType == "dev" ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
-
-            const psbt = new bitcoin.Psbt({ network });
-
-            for (let i = 0; i < selectedUtxos.length; i++) {
-                const utxo = selectedUtxos[i];
-                const isSegWit = utxo.address.startsWith("bc1") || utxo.address.startsWith("tb1");
-                if (isSegWit) {
-                    psbt.addInput({
-                        hash: utxo.txid,
-                        index: utxo.vout,
-                        witnessUtxo: {
-                            value: BigInt(utxo.value),
-                            script: bitcoin.address.toOutputScript(utxo.utxoAddress, network),
-                        },
-                        sequence: MAX_SEQUENCE - 1,
-                    });
-                } else {
-                    psbt.addInput({
-                        hash: utxo.txid,
-                        index: utxo.vout,
-                        nonWitnessUtxo: Buffer.from(utxo.hexTx, "hex"),
-                        sequence: MAX_SEQUENCE - 1,
-                    });
-                }
-            }
-
-            psbt.addOutput({
-                address: recipient,
-                value: BigInt(amountBN.toString()),
-            });
-
-            const embedMemo = bitcoin.payments.embed({
-                data: [Buffer.from(memo, "hex")],
-                network: network,
-            });
-            psbt.addOutput({
-                script: embedMemo.output!,
-                value: BigInt(0),
-            });
-            const changeAmount = totalSelectedAmount.sub(amountBN).sub(toBN(fee));
-            let changeAddress = changeAddresses[0];
-            for (const a of changeAddresses) {
-                const mainAddressBalancesUTXO = await this.externalApiService.getAddressInfoBlockBook(fasset, a);
-                const utxoBalance = toBN(mainAddressBalancesUTXO.balance);
-                if (utxoBalance.eqn(0)) {
-                    changeAddress = a;
-                }
-            }
-            if (changeAmount.gte(REMAIN_SATOSHIS)) {
-                psbt.addOutput({
-                    address: changeAddress,
-                    value: BigInt(changeAmount.toString()),
-                });
-            }
-            return psbt.toBase64();
-        }
-        if (fasset.includes("DOGE")) {
-            const bitcoin = await import("bitcoinjs-lib");
-            const getNetwork = (isTestnet: boolean) => ({
-                messagePrefix: "\x19Dogecoin Signed Message:\n",
-                bech32: "doge",
-                bip32: isTestnet ? { public: 0x043587cf, private: 0x04358394 } : { public: 0x02facafd, private: 0x02fac398 },
-                pubKeyHash: isTestnet ? 0x71 : 0x1e,
-                scriptHash: isTestnet ? 0xc4 : 0x16,
-                wif: isTestnet ? 0xf1 : 0x9e,
-            });
-            const network = getNetwork(this.envType == "dev");
-            const psbt = new bitcoin.Psbt({ network });
-            for (let i = 0; i < selectedUtxos.length; i++) {
-                const utxo = selectedUtxos[i];
-                psbt.addInput({
-                    hash: utxo.txid,
-                    index: utxo.vout,
-                    nonWitnessUtxo: Buffer.from(utxo.hexTx, "hex"),
-                    sequence: MAX_SEQUENCE - 1,
-                });
-            }
-
-            psbt.addOutput({
-                address: recipient,
-                value: BigInt(amountBN.toString()),
-            });
-
-            if (memo) {
-                const embedMemo = bitcoin.payments.embed({
-                    data: [Buffer.from(memo, "hex")],
-                });
-                psbt.addOutput({
-                    script: embedMemo.output!,
-                    value: BigInt(0),
-                });
-            }
-
-            const changeAmount = totalSelectedAmount.sub(amountBN).sub(toBN(fee));
-            if (changeAmount.gte(REMAIN_SATOSHIS)) {
-                const changeAddress = changeAddresses[0];
-                psbt.addOutput({
-                    address: changeAddress,
-                    value: BigInt(changeAmount.toString()),
-                });
-            }
-
-            return psbt.toBase64();
-        }
-    }
-
-    async returnUtxosForAmount(fasset: string, amount: string, address: string, receiveAddresses: string[], changeAddresses: string[]): Promise<any> {
-        let amountBN = toBN(Math.floor(Number(amount)));
-        const selectedUtxos: string[] = [];
-        const utxosAddresses: SelectedUTXOAddress[] = [];
-        let totalSelectedAmount = toBN(0);
-        const fee = await this.estimateFeeForBlocks(fasset);
-        const feeBTC = Math.floor(Number(fee.extraBTC) * 10 ** 8);
-        amountBN = amountBN.add(toBN(feeBTC));
-        let ind = 0;
-        const processUtxos = async (addresses: string[]): Promise<void> => {
-            for (const addr of addresses) {
-                if (totalSelectedAmount.gte(amountBN.add(REMAIN_SATOSHIS))) {
-                    return;
-                }
-
-                const utxos = await this.externalApiService.getUtxosBlockBook(fasset, addr, false);
-                const sortedUtxos = utxos.sort((a, b) => toBN(b.value).sub(toBN(a.value)).toNumber());
-
-                if (sortedUtxos.length > 0) {
-                    const largestUtxo = sortedUtxos[0];
-                    totalSelectedAmount = totalSelectedAmount.add(toBN(largestUtxo.value));
-                    utxosAddresses.push(await this.createSelectedUtxo(fasset, largestUtxo, addr, ind));
-                    ind++;
-                    if (!selectedUtxos.includes(addr)) {
-                        selectedUtxos.push(addr);
-                    }
-                }
-
-                const randomUtxos = this.shuffleArray(sortedUtxos.slice(1));
-                for (const utxo of randomUtxos) {
-                    if (totalSelectedAmount.gte(amountBN.add(REMAIN_SATOSHIS))) {
-                        break;
-                    }
-                    totalSelectedAmount = totalSelectedAmount.add(toBN(utxo.value));
-                    utxosAddresses.push(await this.createSelectedUtxo(fasset, utxo, addr, ind));
-                    ind++;
-                    if (!selectedUtxos.includes(addr)) {
-                        selectedUtxos.push(addr);
-                    }
-                }
-            }
-        };
-
-        await processUtxos([address]);
-        await processUtxos(changeAddresses);
-        await processUtxos(receiveAddresses);
-
-        if (totalSelectedAmount.lt(amountBN)) {
-            throw new LotsException("Insufficient funds to cover the amount and fees.");
-        }
-        selectedUtxos.sort((a, b) => {
-            const hashA = this.doubleKeccak256(a);
-            const hashB = this.doubleKeccak256(b);
-            return hashA.localeCompare(hashB);
-        });
-        utxosAddresses.sort((a, b) => {
-            const hashA = this.doubleKeccak256(a.address);
-            const hashB = this.doubleKeccak256(b.address);
-            return hashA.localeCompare(hashB);
-        });
-        for (let i = 0; i < utxosAddresses.length; i++) {
-            utxosAddresses[i].index = i;
-        }
-        return { addresses: selectedUtxos, estimatedFee: feeBTC, utxos: utxosAddresses };
-    }
-
-    private doubleKeccak256(address: string): string {
-        const firstHash = web3.utils.keccak256(address);
-        return web3.utils.keccak256(firstHash);
-    }
-
     async getRedemptionFeeData(): Promise<RedemptionFeeData[]> {
         const redemptionFeeData: RedemptionFeeData[] = [];
         for (const f of this.botService.fassetList) {
@@ -2665,5 +1482,14 @@ export class UserService {
         const price = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
         const priceMul = price.price.toNumber() / 10 ** price.decimals.toNumber();
         return { price: priceMul };
+    }
+
+    async getMintingEnabled(): Promise<FassetStatus[]> {
+        const fassetStatus: FassetStatus[] = [];
+        for (const f of this.botService.fassetList) {
+            const bot = this.botService.getInfoBot(f);
+            fassetStatus.push({ fasset: f, status: !(await bot.context.assetManager.mintingPaused()) });
+        }
+        return fassetStatus;
     }
 }

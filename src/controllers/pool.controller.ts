@@ -2,12 +2,16 @@ import { Controller, Get, HttpException, HttpStatus, Param, Query } from "@nestj
 import { ApiResponse, ApiTags } from "@nestjs/swagger";
 import { AgentPoolItem, MaxCPTWithdraw, MaxWithdraw } from "src/interfaces/requestResponse";
 import { logger } from "src/logger/winston.logger";
+import { PoolService } from "src/services/pool.service";
 import { UserService } from "src/services/user.service";
 
 @ApiTags("Pool")
 @Controller("api")
 export class PoolController {
-    constructor(private readonly userService: UserService) {}
+    constructor(
+        private readonly userService: UserService,
+        private readonly poolService: PoolService
+    ) {}
 
     @Get("pools/:address")
     @ApiResponse({
@@ -16,7 +20,7 @@ export class PoolController {
     getPools(@Query("fasset") fasset: string[], @Param("address") address: string): Promise<AgentPoolItem[]> {
         try {
             const fassetArray = Array.isArray(fasset) ? fasset : [fasset];
-            return this.userService.getPools(fassetArray, address);
+            return this.poolService.getPools(fassetArray, address);
         } catch (error) {
             logger.error(`Error in getPools for ${fasset} and ${address}`, error);
             throw new HttpException(
@@ -60,7 +64,7 @@ export class PoolController {
     getAgents(@Query("fasset") fasset: string[]): Promise<AgentPoolItem[]> {
         try {
             const fassetArray = Array.isArray(fasset) ? fasset : [fasset];
-            return this.userService.getAgents(fassetArray);
+            return this.poolService.getAgents(fassetArray);
         } catch (error) {
             logger.error(`Error in getAgents for ${fasset}`, error);
             throw new HttpException(
@@ -95,7 +99,7 @@ export class PoolController {
     @Get("pools/:fasset/:address/:poolAddress")
     getPoolsSpecific(@Param("fasset") fasset: string, @Param("address") address: string, @Param("poolAddress") poolAddress: string): Promise<AgentPoolItem> {
         try {
-            return this.userService.getPoolsSpecific(fasset, address, poolAddress);
+            return this.poolService.getPoolsSpecific(fasset, address, poolAddress);
         } catch (error) {
             throw new HttpException(
                 {
@@ -110,7 +114,7 @@ export class PoolController {
     @Get("pools/:fasset/:poolAddress")
     getAgentSpecific(@Param("fasset") fasset: string, @Param("poolAddress") poolAddress: string): Promise<AgentPoolItem> {
         try {
-            return this.userService.getAgentSpecific(fasset, poolAddress);
+            return this.poolService.getAgentSpecific(fasset, poolAddress);
         } catch (error) {
             throw new HttpException(
                 {

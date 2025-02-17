@@ -26,6 +26,9 @@ export class RedemptionDefaultEvent {
     @Property({ type: "bigint" })
     timestamp: number;
 
+    @Property({ nullable: true, type: "text" })
+    txhash?: string;
+
     constructor(
         agentVault: string,
         redeemer: string,
@@ -33,7 +36,8 @@ export class RedemptionDefaultEvent {
         redemptionAmountUBA: string,
         redeemedVaultCollateralWei: string,
         redeemedPoolCollateralWei: string,
-        timestamp: number
+        timestamp: number,
+        txhash: string
     ) {
         this.agentVault = agentVault;
         this.redeemer = redeemer;
@@ -42,5 +46,6 @@ export class RedemptionDefaultEvent {
         this.redeemedVaultCollateralWei = redeemedVaultCollateralWei;
         this.redeemedPoolCollateralWei = redeemedPoolCollateralWei;
         this.timestamp = timestamp;
+        this.txhash = txhash;
     }
 }

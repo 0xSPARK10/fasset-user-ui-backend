@@ -36,6 +36,14 @@ export async function bootstrap() {
             configContent.fAssets.FDOGE.indexerUrls = urlsArray;
         }
     }
+    if (process.env.BTC_INDEXER_URLS) {
+        const urlsArray = process.env.BTC_INDEXER_URLS.split(",");
+        if (process.env.APP_TYPE == "dev") {
+            configContent.fAssets.FTestBTC.indexerUrls = urlsArray;
+        } else {
+            configContent.fAssets.BTC.indexerUrls = urlsArray;
+        }
+    }
     if (process.env.RPC_URL) {
         configContent.rpcUrl = process.env.RPC_URL;
     }
@@ -59,6 +67,14 @@ export async function bootstrap() {
             configContent.fAssets.FDOGE.walletUrls = urlsArray;
         }
     }
+    if (process.env.BTC_WALLET_URLS) {
+        const urlsArray = process.env.BTC_WALLET_URLS.split(",");
+        if (process.env.APP_TYPE == "dev") {
+            configContent.fAssets.FTestBTC.walletUrls = urlsArray;
+        } else {
+            configContent.fAssets.FBTC.walletUrls = urlsArray;
+        }
+    }
     writeFileSync(filePathConfig, JSON.stringify(configContent, null, 4), "utf-8");
     if (Number(process.env.CREATE_SECRETS) == 1) {
         const secrets: SecretsFile = { apiKey: {} };
@@ -77,6 +93,10 @@ export async function bootstrap() {
         if (process.env.DOGE_RPC) {
             const urlsArray = process.env.DOGE_RPC.split(",");
             secrets.apiKey.doge_rpc = urlsArray;
+        }
+        if (process.env.BTC_RPC) {
+            const urlsArray = process.env.BTC_RPC.split(",");
+            secrets.apiKey.btc_rpc = urlsArray;
         }
         if (process.env.NATIVE_RPC) {
             secrets.apiKey.native_rpc = process.env.NATIVE_RPC;
@@ -100,6 +120,13 @@ export async function bootstrap() {
             result[chain] = {
                 address: process.env.DOGE_PUB_ADDR,
                 private_key: process.env.DOGE_PRIV_KEY,
+            };
+        }
+        if (process.env.BTC_PUB_ADDR && process.env.BTC_PRIV_KEY) {
+            const chain = process.env.APP_TYPE == "dev" ? "testBTC" : "BTC";
+            result[chain] = {
+                address: process.env.BTC_PUB_ADDR,
+                private_key: process.env.BTC_PRIV_KEY,
             };
         }
         if (process.env.WALLET_ENCRYPTION) {

@@ -44,6 +44,9 @@ export class CollateralReservationEvent {
     @Property({ type: "bigint" })
     timestamp: number;
 
+    @Property({ nullable: true, type: "text" })
+    txhash?: string;
+
     constructor(
         collateralReservationId: string,
         agentVault: string,
@@ -57,7 +60,8 @@ export class CollateralReservationEvent {
         paymentReference: string,
         executorAddress: string,
         executorFeeNatWei: string,
-        timestamp: number
+        timestamp: number,
+        txhash: string
     ) {
         this.collateralReservationId = collateralReservationId;
         this.agentVault = agentVault;
@@ -72,5 +76,6 @@ export class CollateralReservationEvent {
         this.executorAddress = executorAddress;
         this.executorFeeNatWei = executorFeeNatWei;
         this.timestamp = timestamp;
+        this.txhash = txhash;
     }
 }

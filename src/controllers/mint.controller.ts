@@ -14,15 +14,20 @@ import {
     submitTxResponse,
     ReturnAddresses,
     UTXOSLedger,
+    FassetStatus,
 } from "src/interfaces/requestResponse";
 import { SelectedUTXOAddress } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
 import { UserService } from "src/services/user.service";
+import { UtxoService } from "src/services/utxo.service";
 
 @ApiTags("Minting")
 @Controller("api")
 export class MintController {
-    constructor(private readonly userService: UserService) {}
+    constructor(
+        private readonly userService: UserService,
+        private readonly utxoService: UtxoService
+    ) {}
 
     @Get("maxLots/:fasset")
     @ApiResponse({
@@ -183,7 +188,7 @@ export class MintController {
     })
     getUtxosForTransaction(@Param("fasset") fasset: string, @Param("xpub") xpub: string, @Param("amount") amount: string): Promise<UTXOSLedger> {
         try {
-            return this.userService.calculateUtxosForAmount(fasset, xpub, amount);
+            return this.utxoService.calculateUtxosForAmount(fasset, xpub, amount);
         } catch (error) {
             logger.error(`Error in calculate utxos for amount for ${fasset}`, error);
             throw new HttpException(
@@ -249,7 +254,7 @@ export class MintController {
     ): Promise<any> {
         try {
             const addressListChange = changeAddresses ? changeAddresses.split(",") : [];
-            return this.userService.prepareUtxosForAmount(fasset, amount, recipient, memo, fee, addressListChange, selectedUtxos);
+            return this.utxoService.prepareUtxosForAmount(fasset, amount, recipient, memo, fee, addressListChange, selectedUtxos);
         } catch (error) {
             logger.error(`Error in prepare utxo for ${fasset}`, error);
             throw new HttpException(
@@ -276,9 +281,28 @@ export class MintController {
         try {
             const addressListReceive = receiveAddresses ? receiveAddresses.split(",") : [];
             const addressListChange = changeAddresses ? changeAddresses.split(",") : [];
-            return this.userService.returnUtxosForAmount(fasset, amount, address, addressListReceive, addressListChange);
+            return this.utxoService.returnUtxosForAmount(fasset, amount, address, addressListReceive, addressListChange);
         } catch (error) {
             logger.error(`Error in getUnderlyingBalance for ${fasset} and ${address}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("mintEnabled")
+    @ApiResponse({
+        type: [FassetStatus],
+    })
+    getMintingEnabled(): Promise<FassetStatus[]> {
+        try {
+            return this.userService.getMintingEnabled();
+        } catch (error) {
+            logger.error(`Error in getMintEnabled`, error);
             throw new HttpException(
                 {
                     status: HttpStatus.INTERNAL_SERVER_ERROR,

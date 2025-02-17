@@ -22,6 +22,9 @@ import { RedemptionRejected } from "src/entities/RedemptionRejected";
 import { RedemptionTakenOver } from "src/entities/RedemptionTakenOver";
 import { RedemptionRequested } from "src/entities/RedemptionRequested";
 import { AttestationNotProved } from "node_modules/@flarelabs/fasset-bots-core/dist/src/underlying-chain/interfaces/IFlareDataConnectorClient";
+import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
+import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
+import { CollateralReservationEvent } from "src/entities/CollateralReservation";
 
 enum RedemptionStatus {
     EXPIRED = "EXPIRED",
@@ -112,14 +115,6 @@ export class RunnerService implements OnApplicationBootstrap {
             return transaction;
         }
         if (transaction != null) return transaction;
-        let currentBlockHeight = await this.userBotMap.get(fasset).context.blockchainIndexer.getLastFinalizedBlockNumber();
-        const waitBlocks = 6 + currentBlockHeight;
-        while (currentBlockHeight < waitBlocks) {
-            await sleep(1000);
-            const transaction = await this.userBotMap.get(fasset).context.blockchainIndexer.getTransaction(txHash);
-            if (transaction != null) return transaction;
-            currentBlockHeight = await this.userBotMap.get(fasset).context.blockchainIndexer.getLastFinalizedBlockNumber();
-        }
         return null;
     }
 
@@ -134,12 +129,41 @@ export class RunnerService implements OnApplicationBootstrap {
                     //console.log("minting null");
                     continue;
                 }
+                const defaultEvent = await this.em.findOne(MintingDefaultEvent, {
+                    collateralReservationId: minting.collateralReservationId,
+                });
+                if (defaultEvent) {
+                    minting.processed = true;
+                    await this.em.persistAndFlush(minting);
+                }
+                if (minting.txhash == null) {
+                    if (time - minting.timestamp > 1000 * 60 * 60 * 24) {
+                        minting.processed = true;
+                        await this.em.persistAndFlush(minting);
+                        continue;
+                    }
+                    const underlyingPayment = await this.em.findOne(UnderlyingPayment, {
+                        paymentReference: minting.paymentReference,
+                    });
+                    if (!underlyingPayment) {
+                        const txs = await this.userBotMap.get(fasset).context.blockchainIndexer.getTransactionsByReference(minting.paymentReference);
+                        if (txs.length == 0) {
+                            continue;
+                        }
+                        minting.txhash = txs[0].hash;
+                        await this.em.persistAndFlush(minting);
+                    } else {
+                        minting.txhash = underlyingPayment.underlyingHash;
+                        await this.em.persistAndFlush(minting);
+                    }
+                }
                 if (minting.state == false) {
                     try {
                         const tx = await this.getXRPTransaction(fasset, minting.txhash);
                         if (tx == null) {
-                            if (time - minting.timestamp > 1000 * 60 * 60 * 5) {
-                                await this.em.removeAndFlush(minting);
+                            if (time - minting.timestamp > 1000 * 60 * 60 * 24) {
+                                minting.processed = true;
+                                await this.em.persistAndFlush(minting);
                                 continue;
                             }
                             //console.log("Not found");
@@ -150,16 +174,6 @@ export class RunnerService implements OnApplicationBootstrap {
                         logger.error(`Error in processMintings (get transaction):`, error);
                         continue;
                     }
-                    /*if(tx == "tx") {
-            continue;
-          }*/
-                    /*let underlyingAddress;
-          if(fasset == "FTestBTC" || fasset == "FTestDOGE") {
-            const tx = await this.userBotMap.get(fasset).context.blockchainIndexer.getTransaction(minting.txhash);
-            underlyingAddress = tx.inputs[0][0];
-          } else {
-            underlyingAddress = minting.userUnderlyingAddress;
-          }*/
                     let request;
                     if (fasset.includes("BTC") || fasset.includes("DOGE")) {
                         try {
@@ -174,7 +188,7 @@ export class RunnerService implements OnApplicationBootstrap {
                         try {
                             request = await this.userBotMap
                                 .get(fasset)
-                                .context.attestationProvider.requestPaymentProof(minting.txhash, minting.userUnderlyingAddress, minting.paymentAddress);
+                                .context.attestationProvider.requestPaymentProof(minting.txhash, null, minting.paymentAddress);
                         } catch (error) {
                             logger.error(`Error in processMintings (request payment proof):`, error);
                             continue;
@@ -245,7 +259,11 @@ export class RunnerService implements OnApplicationBootstrap {
                                 }
                                 if (error.message.includes("invalid minting reference")) {
                                     minting.processed = true;
-                                    await this.em.removeAndFlush(minting);
+                                    await this.em.persistAndFlush(minting);
+                                }
+                                if (error.message.includes("minting payment too old")) {
+                                    minting.processed = true;
+                                    await this.em.persistAndFlush(minting);
                                 }
                                 continue;
                             }

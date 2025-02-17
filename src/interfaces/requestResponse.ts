@@ -674,3 +674,10 @@ export class TimeData {
     @ApiProperty()
     isPositiveCollateralDiff: boolean;
 }
+
+export class FassetStatus {
+    @ApiProperty({ example: "FXRP" })
+    fasset: string;
+    @ApiProperty({ example: true })
+    status: boolean;
+}

@@ -37,6 +37,12 @@ import { RedemptionTakenOver } from "./entities/RedemptionTakenOver";
 import { RedemptionDefaultEvent } from "./entities/RedemptionDefaultEvent";
 import { RewardsController } from "./controllers/rewards.controller";
 import { RewardsService } from "./services/rewarding.service";
+import { UnderlyingPayment } from "./entities/UnderlyingPayment";
+import { IndexerState } from "./entities/IndexerState";
+import { MintingDefaultEvent } from "./entities/MintingDefaultEvent";
+import { PoolService } from "./services/pool.service";
+import { UtxoService } from "./services/utxo.service";
+import { HistoryService } from "./services/userHistory.service";
 
 @Module({
     imports: [
@@ -59,6 +65,9 @@ import { RewardsService } from "./services/rewarding.service";
             RedemptionRequested,
             RedemptionTakenOver,
             RedemptionDefaultEvent,
+            UnderlyingPayment,
+            IndexerState,
+            MintingDefaultEvent,
         ]),
         ConfigModule.forRoot({
             isGlobal: true,
@@ -79,8 +88,19 @@ import { RewardsService } from "./services/rewarding.service";
         SwaggerController,
         RewardsController,
     ],
-    providers: [MikroOrmHealthIndicator, UserService, CleaningService, BotService, RunnerService, ExternalApiService, RewardsService],
-    exports: [BotService, UserService],
+    providers: [
+        MikroOrmHealthIndicator,
+        UserService,
+        CleaningService,
+        BotService,
+        RunnerService,
+        ExternalApiService,
+        RewardsService,
+        PoolService,
+        UtxoService,
+        HistoryService,
+    ],
+    exports: [BotService, UserService, PoolService, UtxoService, HistoryService],
 })
 export class AppModule implements NestModule {
     configure(consumer: MiddlewareConsumer) {

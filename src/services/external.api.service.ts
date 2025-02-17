@@ -40,6 +40,60 @@ export class ExternalApiService {
         };
     }
 
+    async getMints(vaultAddress: string): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/agent-minting-executed-count?agent=" + vaultAddress, { headers: this.getAuthHeaders() })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data.amount;
+        } catch (error) {
+            logger.error(`Error in minting executed count`, error);
+            return 0;
+        }
+    }
+
+    async getRedemptionSuccessRate(vaultAddress: string): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/agent-redemption-success-rate?agent=" + vaultAddress, { headers: this.getAuthHeaders() })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data.amount;
+        } catch (error) {
+            logger.error(`Error in redemption success rate`, error);
+            return 0;
+        }
+    }
+
+    async getLiquidationCount(vaultAddress: string): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/agent-performed-liquidation-count?agent=" + vaultAddress, { headers: this.getAuthHeaders() })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data.amount;
+        } catch (error) {
+            logger.error(`Error in get liquidation count`, error);
+            return 0;
+        }
+    }
+
     async getDefaultEvent(fasset: string, requestId: string): Promise<IndexerApiResponse> {
         if (this.apiUrl == undefined) {
             throw new LotsException("No api in .env");

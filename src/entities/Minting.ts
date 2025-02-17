@@ -8,7 +8,7 @@ export class Minting {
     @Property()
     collateralReservationId: string;
 
-    @Property()
+    @Property({ nullable: true })
     txhash: string;
 
     @Property()
@@ -53,6 +53,9 @@ export class Minting {
     @Property()
     vaultAddress: string;
 
+    @Property({ nullable: true, type: "text" })
+    paymentReference?: string;
+
     constructor(
         collateralReservationId: string,
         txhash: string,
@@ -66,7 +69,8 @@ export class Minting {
         amount: string,
         timestamp: number,
         handshakeRequired: boolean,
-        vaultAddress: string
+        vaultAddress: string,
+        paymentReference: string
     ) {
         this.collateralReservationId = collateralReservationId;
         this.txhash = txhash;
@@ -84,5 +88,6 @@ export class Minting {
         this.timestamp = timestamp;
         this.handshakeRequired = handshakeRequired;
         this.vaultAddress = vaultAddress;
+        this.paymentReference = paymentReference;
     }
 }

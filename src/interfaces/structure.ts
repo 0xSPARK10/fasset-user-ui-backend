@@ -145,6 +145,7 @@ export interface EcosystemData {
 export interface AssetManagerFasset {
     fasset: string;
     assetManager: string;
+    decimals: number;
 }
 
 export interface FassetDecimals {

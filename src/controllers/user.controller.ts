@@ -12,12 +12,18 @@ import {
     TimeData,
 } from "src/interfaces/requestResponse";
 import { logger } from "src/logger/winston.logger";
+import { PoolService } from "src/services/pool.service";
 import { UserService } from "src/services/user.service";
+import { HistoryService } from "src/services/userHistory.service";
 
 @ApiTags("User")
 @Controller("api")
 export class UserController {
-    constructor(private readonly userService: UserService) {}
+    constructor(
+        private readonly userService: UserService,
+        private readonly poolService: PoolService,
+        private readonly historyService: HistoryService
+    ) {}
 
     @Get("fassets")
     @ApiResponse({
@@ -63,7 +69,7 @@ export class UserController {
     })
     getAllAgents(@Param("fasset") fasset: string): Promise<AgentPoolLatest[]> {
         try {
-            return this.userService.getAgentsLatest(fasset);
+            return this.poolService.getAgentsLatest(fasset);
         } catch (error) {
             logger.error(`Error in getAgentsLatest for ${fasset}`, error);
             throw new HttpException(
@@ -124,7 +130,7 @@ export class UserController {
     })
     getUserProgress(@Param("address") address: string): Promise<Progress[]> {
         try {
-            return this.userService.getProgress(address);
+            return this.historyService.getProgress(address);
         } catch (error) {
             logger.error(`Error in getUserProgress`, error);
             throw new HttpException(
