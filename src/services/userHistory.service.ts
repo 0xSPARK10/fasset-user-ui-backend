@@ -15,6 +15,7 @@ import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
 import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { RedemptionRequested } from "src/entities/RedemptionRequested";
 import { UserService } from "./user.service";
+import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 
 @Injectable()
 export class HistoryService {
@@ -47,13 +48,24 @@ export class HistoryService {
             if (mint.txhash == null && Number(mint.timestamp) < nowDateDay && !defaultEvent) {
                 continue;
             }
+            let mintTxhash = mint.txhash;
+            if (mint.txhash == null) {
+                const underlyingPayment = await this.em.findOne(UnderlyingPayment, {
+                    paymentReference: mint.paymentReference,
+                });
+                if (underlyingPayment) {
+                    mintTxhash = underlyingPayment.underlyingHash;
+                } else {
+                    mintTxhash = "000000000000000000000000";
+                }
+            }
             const progress = {
                 action: "MINT",
                 timestamp: Number(mint.timestamp),
                 amount: mint.amount,
                 fasset: mint.fasset,
                 status: mint.processed,
-                txhash: mint.txhash == null ? "Not found" : mint.txhash,
+                txhash: mintTxhash,
                 defaulted: defaultEvent ? true : false,
             };
             userProgress.push(progress);

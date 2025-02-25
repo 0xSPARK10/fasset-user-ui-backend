@@ -670,13 +670,13 @@ export class BotService implements OnModuleInit {
                                                                 event.args.redeemedVaultCollateralWei,
                                                                 event.args.redeemedPoolCollateralWei,
                                                                 timestamp,
-                                                                event.txhash
+                                                                event.transactionHash
                                                             );
                                                             await this.em.persistAndFlush(redemptionDefaultEvent);
                                                         } else {
                                                             if (event.event == "RedemptionRequestIncomplete") {
                                                                 const redemptionIncompleteEvent = new IncompleteRedemption(
-                                                                    event.txhash,
+                                                                    event.transactionHash,
                                                                     event.args.redeemer,
                                                                     event.args.remainingLots,
                                                                     timestamp
@@ -690,7 +690,7 @@ export class BotService implements OnModuleInit {
                                                                         event.args.collateralReservationId,
                                                                         event.args.reservedAmountUBA,
                                                                         timestamp,
-                                                                        event.txhash
+                                                                        event.transactionHash
                                                                     );
                                                                     await this.em.persistAndFlush(mintingDefault);
                                                                 }

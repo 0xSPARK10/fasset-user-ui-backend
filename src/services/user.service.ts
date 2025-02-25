@@ -548,7 +548,7 @@ export class UserService {
                 toBN(btcFee as string)
                     .divn(1000)
                     .toNumber(),
-                500
+                fasset.includes("BTC") ? 50 : 500
             );
             const btcForBytes = 300 * fee;
             const extraBTC = this.envType == "dev" ? (btcForBytes * 1.5) / 10 ** 8 : btcForBytes / 10 ** 8;
@@ -576,7 +576,7 @@ export class UserService {
                 toBN(btcFee as string)
                     .divn(1000)
                     .toNumber(),
-                500
+                fasset.includes("BTC") ? 25 : 500
             );
             const btcForBytes = 300 * fee;
             const extraBTC = btcForBytes / 10 ** 8;
@@ -1183,7 +1183,7 @@ export class UserService {
             }
         }
         return {
-            status: RedemptionStatusEnum.SUCCESS,
+            status: RedemptionStatusEnum.PENDING,
             incomplete: fullRedeemData.incomplete,
             incompleteData: fullRedeemData.dataIncomplete,
             rejected: rejected,
@@ -1307,7 +1307,7 @@ export class UserService {
         }
         return {
             balance: formatFixed(toBN(userNatPosition), 18, {
-                decimals: 3,
+                decimals: 2,
                 groupDigits: true,
                 groupSeparator: ",",
             }),
