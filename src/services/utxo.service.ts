@@ -48,13 +48,14 @@ export class UtxoService {
         const feeBTC = Math.floor(Number(fee.extraBTC) * 10 ** 8);
         amountBN = amountBN.add(toBN(feeBTC));
         let ind = 0;
+        const isBTC = fasset.includes("BTC") ? true : false;
         const processUtxos = async (addresses: string[]): Promise<void> => {
             for (const addr of addresses) {
                 if (totalSelectedAmount.gte(amountBN.add(REMAIN_SATOSHIS))) {
                     return;
                 }
 
-                const utxos = await this.externalApiService.getUtxosBlockBook(fasset, addr, false);
+                const utxos = await this.externalApiService.getUtxosBlockBook(fasset, addr, true);
                 const sortedUtxos = utxos.sort((a, b) => toBN(b.value).sub(toBN(a.value)).toNumber());
 
                 if (sortedUtxos.length > 0) {

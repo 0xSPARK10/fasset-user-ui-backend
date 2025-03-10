@@ -198,6 +198,10 @@ export class ExternalApiService {
         const endp = confirmed ? `${indexer}/api/v2/utxo/${address}?confirmed=true` : `${indexer}/api/v2/utxo/${address}`;
         try {
             const response = await axiosInstance.get(endp);
+            if (fasset.includes("BTC")) {
+                const data = response.data as UTXOBTCXPUB[];
+                return data.filter((utxo) => Number(utxo.confirmations) >= 6);
+            }
             return response.data as UTXOBTCXPUB[];
         } catch (error) {
             // Handle errors

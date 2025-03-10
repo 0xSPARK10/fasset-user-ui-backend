@@ -692,6 +692,7 @@ export class UserService {
             changeAddresses = changeAddresses.filter((address) => !address.startsWith("bc1"));
             receiveAddresses = receiveAddresses.filter((address) => !address.startsWith("bc1"));
         }*/
+        //const isBTC = fasset.includes("BTC") ? false : false;
         const mainAddressBalancesUTXO = await this.externalApiService.getUtxosBlockBook(fasset, underlyingAddress, false);
         //let balance = await this.sumBalances(mainAddressBalances);
         let utxoBalance = await this.sumUTXO(mainAddressBalancesUTXO);
@@ -1145,6 +1146,7 @@ export class UserService {
         let takenOver = false;
         let rejected = false;
         let rejectedDefaulted = false;
+        let success = false;
         for (let i = 0; i < takenOverRed.length; i++) {
             if (takenOverRed[i].amountUBA === "0") {
                 continue;
@@ -1175,6 +1177,7 @@ export class UserService {
                 case RedemptionStatusEnum.PENDING:
                     return { status: status, incomplete: fullRedeemData.incomplete, incompleteData: fullRedeemData.dataIncomplete };
                 case "SUCCESS":
+                    success = true;
                     break;
                 case RedemptionStatusEnum.DEFAULT:
                     return { status: RedemptionStatusEnum.DEFAULT, incomplete: fullRedeemData.incomplete, incompleteData: fullRedeemData.dataIncomplete };
@@ -1183,7 +1186,7 @@ export class UserService {
             }
         }
         return {
-            status: RedemptionStatusEnum.PENDING,
+            status: success ? RedemptionStatusEnum.SUCCESS : RedemptionStatusEnum.PENDING,
             incomplete: fullRedeemData.incomplete,
             incompleteData: fullRedeemData.dataIncomplete,
             rejected: rejected,
