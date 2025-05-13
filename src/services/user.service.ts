@@ -31,6 +31,7 @@ import {
     RedemptionDefaultStatusGrouped,
     RedemptionFee,
     RedemptionFeeData,
+    RedemptionQueue,
     RedemptionStatus,
     RequestMint,
     RequestRedemption,
@@ -222,8 +223,8 @@ export class UserService {
 
     async getLotSize(fasset: string): Promise<LotSize> {
         const bot = this.botService.getInfoBot(fasset);
-        const lotSize = await bot.getLotSize();
         const settings = await bot.context.assetManager.getSettings();
+        const lotSize = Number(settings.lotSizeAMG) * Number(settings.assetMintingGranularityUBA);
         const formatted = lotSize / 10 ** Number(settings.assetDecimals);
         return { lotSize: formatted };
     }
@@ -244,7 +245,15 @@ export class UserService {
     async getRedemptionFee(fasset: string): Promise<RedemptionFee> {
         const bot = this.botService.getInfoBot(fasset);
         const settings = await bot.context.assetManager.getSettings();
-        return { redemptionFee: settings.redemptionFeeBIPS.toString() };
+        if (fasset.includes("XRP")) {
+            const redQueue = await this.getRedemptionQueue(fasset);
+            return {
+                redemptionFee: settings.redemptionFeeBIPS.toString(),
+                maxLotsOneRedemption: redQueue.maxLotsOneRedemption,
+                maxRedemptionLots: redQueue.maxLots,
+            };
+        }
+        return { redemptionFee: settings.redemptionFeeBIPS.toString(), maxLotsOneRedemption: -1, maxRedemptionLots: -1 };
     }
 
     async getProtocolFees(fasset: string): Promise<ProtocolFees> {
@@ -1494,5 +1503,11 @@ export class UserService {
             fassetStatus.push({ fasset: f, status: !(await bot.context.assetManager.mintingPaused()) });
         }
         return fassetStatus;
+    }
+
+    async getRedemptionQueue(fasset: string): Promise<RedemptionQueue> {
+        const maxLotsSingleRedeem = await this.cacheManager.get(fasset + "maxLotsSingleRedeem");
+        const maxLotsTotalRedeem = await this.cacheManager.get(fasset + "maxLotsTotalRedeem");
+        return { maxLots: Number(maxLotsTotalRedeem), maxLotsOneRedemption: Number(maxLotsSingleRedeem) };
     }
 }

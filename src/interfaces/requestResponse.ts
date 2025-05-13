@@ -129,6 +129,10 @@ export class MaxLots {
 export class RedemptionFee {
     @ApiProperty({ example: "10" })
     redemptionFee: string;
+    @ApiProperty({ example: 123 })
+    maxRedemptionLots: number;
+    @ApiProperty({ example: 212 })
+    maxLotsOneRedemption: number;
 }
 
 export class TrailingFee {
@@ -325,6 +329,8 @@ export class AgentPoolItem extends AgentPoolCommon {
     lifetimePoolClaimed?: string;
     @ApiProperty({ example: "25,859.734" })
     lifetimePoolClaimedUSD?: string;
+    @ApiProperty({ example: "12345567" })
+    userPoolTokensFull?: string;
 }
 
 export class AgentPoolLatest extends AgentPoolCommon {
@@ -523,6 +529,8 @@ export class SupplyFasset {
     allLots: number;
     @ApiProperty()
     mintedPercentage: string;
+    @ApiProperty()
+    mintedLots: number;
 }
 
 export class SupplyTotalCollateral {
@@ -660,6 +668,27 @@ export class EcosystemData {
     agentCollateral: string;
 }
 
+export class TimeDataCV {
+    @ApiProperty()
+    supplyDiff: string;
+    @ApiProperty({ type: [TimeSeries] })
+    inflowGraph: TimeSeries[];
+    @ApiProperty({ type: [TimeSeries] })
+    outflowGraph: TimeSeries[];
+    @ApiProperty()
+    isPositiveSupplyDiff: boolean;
+    @ApiProperty({ type: [TimeSeries] })
+    tvlGraph: TimeSeries[];
+    @ApiProperty()
+    inflowDiff: string;
+    @ApiProperty()
+    outflowDiff: string;
+    @ApiProperty()
+    isPositiveInflowDiff: boolean;
+    @ApiProperty()
+    isPositiveOutflowDiff: boolean;
+}
+
 export class TimeData {
     @ApiProperty({ type: [FassetSupplyDiff] })
     supplyDiff: FassetSupplyDiff[];
@@ -673,6 +702,8 @@ export class TimeData {
     totalCollateralDiff: string;
     @ApiProperty()
     isPositiveCollateralDiff: boolean;
+    @ApiProperty()
+    coreVaultData: TimeDataCV;
 }
 
 export class FassetStatus {
@@ -680,4 +711,11 @@ export class FassetStatus {
     fasset: string;
     @ApiProperty({ example: true })
     status: boolean;
+}
+
+export class RedemptionQueue {
+    @ApiProperty({ example: 12 })
+    maxLotsOneRedemption: number;
+    @ApiProperty({ example: 55 })
+    maxLots: number;
 }

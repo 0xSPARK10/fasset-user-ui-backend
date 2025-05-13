@@ -611,4 +611,194 @@ export class ExternalApiService {
             return 0;
         }
     }
+
+    async getCVInflowTimeseries(endtime: number, npoints: number, startTime: number): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(
+                    this.apiUrl + "/dashboard/timeseries/core-vault-inflow?endtime=" + endtime + "&npoints=" + npoints + "&startTime=" + startTime,
+                    {
+                        headers: this.getAuthHeaders(),
+                    }
+                )
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get cv inflow timeseries`, error);
+            return 0;
+        }
+    }
+
+    async getCVOutflowTimeSeries(endtime: number, npoints: number, startTime: number): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(
+                    this.apiUrl + "/dashboard/timeseries/core-vault-outflow?endtime=" + endtime + "&npoints=" + npoints + "&startTime=" + startTime,
+                    {
+                        headers: this.getAuthHeaders(),
+                    }
+                )
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV outflow timeseries`, error);
+            return 0;
+        }
+    }
+
+    async getCVInflows(timeStamp: number): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return [{ value: "0" }];
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/timespan/core-vault-inflows?timestamps=" + timeStamp, {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return [{ value: "0" }];
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV inflows`, error);
+            return [{ value: "0" }];
+        }
+    }
+
+    async getCVOutflows(timeStamp: number): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return [{ value: "0" }];
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/timespan/core-vault-outflows?timestamps=" + timeStamp, {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return [{ value: "0" }];
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV outflows`, error);
+            return [{ value: "0" }];
+        }
+    }
+
+    async getCVInflowsDiff(start: string, end: string): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/timespan/core-vault-inflows?&timestamps=" + start + "&timestamps=" + end, {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV inflows diff`, error);
+            return 0;
+        }
+    }
+
+    async getCVOutflowsDiff(start: string, end: string): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/timespan/core-vault-outflows?&timestamps=" + start + "&timestamps=" + end, {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV outflows diff`, error);
+            return 0;
+        }
+    }
+
+    async getCVTotalDiff(start: string, end: string): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/timespan/core-vault-balance-usd?&timestamps=" + start + "&timestamps=" + end, {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV total diff`, error);
+            return 0;
+        }
+    }
+
+    async getCVTVL(endtime: number, npoints: number, startTime: number): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(
+                    this.apiUrl + "/dashboard/timeseries/core-vault-tvl?endtime=" + endtime + "&npoints=" + npoints + "&startTime=" + startTime,
+                    {
+                        headers: this.getAuthHeaders(),
+                    }
+                )
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV tvl timeseries`, error);
+            return 0;
+        }
+    }
+
+    async getCVTotalBalanceTimestamps(timestamps: string[]): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const url = timestamps.map((t) => `&timestamps=${t}`).join("");
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/timespan/core-vault-balance-usd?" + url, {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV total balance timestamps`, error);
+            return 0;
+        }
+    }
 }

@@ -131,4 +131,23 @@ export class RedemptionController {
             );
         }
     }
+
+    @Get("redemptionQueue/:fasset")
+    /*@ApiResponse({
+        type: [RedemptionFeeData],
+    })*/
+    getRedemptionQueue(@Param("fasset") fasset: string): Promise<any> {
+        try {
+            return this.userService.getRedemptionQueue(fasset);
+        } catch (error) {
+            logger.error(`Error in getRedemptionQueue`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
 }

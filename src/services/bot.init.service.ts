@@ -30,6 +30,8 @@ import {
     TimeSeriesIndexer,
     TopPool,
     TopPoolData,
+    TimeDataCV,
+    GenericDiff,
 } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
 import { AxiosRequestConfig } from "axios";
@@ -65,6 +67,7 @@ export class BotService implements OnModuleInit {
     private infoBotMap: Map<string, InfoBotCommands> = new Map();
     private relay: IRelayInstance;
     private isRunning: boolean = false;
+    private isRunningRedQueue: boolean = false;
     private apiUrl: string;
     private costonBotPath: string;
     private username: string;
@@ -111,6 +114,12 @@ export class BotService implements OnModuleInit {
     topPools: TopPoolData[] = [];
     envType: string;
     agentPoolCollateral: string = "0";
+    coreVaultSupply: string = "0";
+    coreVaultSupplyUSD: string = "0";
+    coreVaultInflows: string = "0";
+    coreVaultInflowsUSD: string = "0";
+    coreVaultOutflows: string = "0";
+    coreVaultOutflowsUSD: string = "0";
 
     constructor(
         private readonly orm: MikroORM,
@@ -189,6 +198,7 @@ export class BotService implements OnModuleInit {
                     this.collateralTokenList.push(c.tokenFtsoSymbol);
                 }
             }
+            await this.updateRedemptionQueue(fasset);
         }
         const contractPath = config.contractsJsonFile;
         const filePathContracts = join(__dirname, "../..", "src", contractPath);
@@ -223,6 +233,18 @@ export class BotService implements OnModuleInit {
                 }
             }
         });
+        cron.schedule("*/1 * * * *", async () => {
+            if (!this.isRunningRedQueue) {
+                this.isRunningRedQueue = true;
+                try {
+                    await this.updateRedemptionQueue(this.envType == "dev" ? "FTestXRP" : "FXRP");
+                } catch (error) {
+                    logger.error(`'Error running updateRedemptionQueue:`, error);
+                } finally {
+                    this.isRunningRedQueue = false;
+                }
+            }
+        });
     }
 
     async onModuleDestroy() {
@@ -250,6 +272,20 @@ export class BotService implements OnModuleInit {
             } else {
                 diffs.push({ fasset: f, diff: "100.0", isPositive: true });
             }
+        }
+        return diffs;
+    }
+
+    async calculateInflowsOutflowsDiff(supply: any): Promise<GenericDiff> {
+        //TODO fix test, production
+        let diffs: GenericDiff;
+        if (supply["FXRP"]) {
+            const data = supply["FXRP"];
+            const diff = Number(data[1].value) - Number(data[0].value);
+            const percentage = Number(data[0].value) == 0 ? 100 : (diff / Number(data[0].value)) * 100;
+            diffs = { diff: Math.abs(percentage).toFixed(1), isPositive: diff >= 0 };
+        } else {
+            diffs = { diff: "100.0", isPositive: true };
         }
         return diffs;
     }
@@ -285,6 +321,19 @@ export class BotService implements OnModuleInit {
         return timeSeries;
     }
 
+    async formatTimespanToTimeseries(data: FassetTimeSupply[]): Promise<TimeSeries[]> {
+        const timeSeries: TimeSeries[] = [];
+        for (let i = 0; i < data.length; i++) {
+            const valueUSD = formatFixed(toBN(data[i].value), 8, {
+                decimals: 3,
+                groupDigits: true,
+                groupSeparator: ",",
+            });
+            timeSeries.push({ timestamp: Math.floor(data[i].timestamp), value: valueUSD });
+        }
+        return timeSeries;
+    }
+
     //Get time data for landing page
     async getTimeData(): Promise<void> {
         //Loop for hour, week, month, year
@@ -309,24 +358,24 @@ export class BotService implements OnModuleInit {
                 case 2:
                     timeScopeAPI = "month";
                     timeScopeTime = 30 * 24 * 60 * 60;
-                    n = 12;
+                    n = 10;
                     break;
                 case 3:
                     timeScopeAPI = "year";
                     timeScopeTime = 365 * 24 * 60 * 60;
-                    n = 12;
+                    n = 10;
                     break;
                 case 4:
                     timeScopeAPI = "yearToDate";
                     const now = new Date();
                     const startOfYear = new Date(now.getFullYear(), 0, 1);
                     timeScopeTime = Math.floor((Date.now() - startOfYear.getTime()) / 1000);
-                    n = 12;
+                    n = 10;
                     break;
                 case 5:
                     timeScopeAPI = "allTime";
                     timeScopeTime = 5 * 365 * 24 * 60 * 60;
-                    n = 12;
+                    n = 10;
                     break;
                 default:
                     continue;
@@ -402,6 +451,52 @@ export class BotService implements OnModuleInit {
             const graphRedeems = await this.formatTimeSeries(pointRedeem);
             const totalCollateralDifference = await this.externalApiService.getTotalPoolCollateralDiff(dayTimestamp.toString(), now.toString());
             const totalCollateralDiff = await this.calculatePoolCollateralDiff(totalCollateralDifference);
+            // TODO actual calculation from indexer
+            let pointInflows = await this.externalApiService.getCVInflowTimeseries(now, n, dayTimestamp);
+            if (this.isEmptyObject(pointInflows) || pointInflows == 0 || pointInflows.length == 0) {
+                pointInflows = [];
+                pointInflows.push({
+                    index: 0,
+                    start: dayTimestamp,
+                    end: now,
+                    value: "0",
+                });
+            }
+            let pointOutflows = await this.externalApiService.getCVOutflowTimeSeries(now, n, dayTimestamp);
+            if (this.isEmptyObject(pointOutflows) || pointOutflows == 0 || pointOutflows.length == 0) {
+                pointOutflows = [];
+                pointOutflows.push({
+                    index: 0,
+                    start: dayTimestamp,
+                    end: now,
+                    value: "0",
+                });
+            }
+            const graphInflows = await this.formatTimeSeries(pointInflows);
+            const graphOutflows = await this.formatTimeSeries(pointOutflows);
+            const indexerTimestamps = [];
+            for (const g of graphInflows) {
+                indexerTimestamps.push(g.timestamp.toString());
+            }
+            const cvTvlTimestamps = await this.externalApiService.getCVTotalBalanceTimestamps(indexerTimestamps);
+            const graphTVL = await this.formatTimespanToTimeseries(cvTvlTimestamps);
+            const getInflowsDiff = await this.externalApiService.getCVInflowsDiff(dayTimestamp.toString(), now.toString());
+            const getOutflowsDiff = await this.externalApiService.getCVOutflowsDiff(dayTimestamp.toString(), now.toString());
+            const inflowsDiff = await this.calculateInflowsOutflowsDiff(getInflowsDiff);
+            const outflowsDiff = await this.calculateInflowsOutflowsDiff(getOutflowsDiff);
+            const getCVDiff = await this.externalApiService.getCVTotalDiff(dayTimestamp.toString(), now.toString());
+            const cvDiff = await this.calculatePoolCollateralDiff(getCVDiff);
+            const coreVaultData: TimeDataCV = {
+                supplyDiff: cvDiff.diff,
+                isPositiveSupplyDiff: cvDiff.isPositive,
+                inflowGraph: graphInflows,
+                outflowGraph: graphOutflows,
+                inflowDiff: inflowsDiff.diff,
+                isPositiveInflowDiff: inflowsDiff.isPositive,
+                outflowDiff: outflowsDiff.diff,
+                isPositiveOutflowDiff: outflowsDiff.isPositive,
+                tvlGraph: graphTVL,
+            };
             const timeData: TimeData = {
                 supplyDiff: diffs,
                 mintGraph: graphMints,
@@ -409,6 +504,7 @@ export class BotService implements OnModuleInit {
                 bestPools: topPoolsData,
                 totalCollateralDiff: totalCollateralDiff.diff,
                 isPositiveCollateralDiff: totalCollateralDiff.isPositive,
+                coreVaultData: coreVaultData,
             };
             await this.cacheManager.set(timeScopeAPI + "Data", timeData, 0);
         }
@@ -799,6 +895,8 @@ export class BotService implements OnModuleInit {
                 availableToMintLots: 0,
                 allLots: 0,
                 mintedPercentage: "0",
+                availableToMintAsset: "0",
+                mintedLots: 0,
             };
             const mintingCap = toBN(settings.mintingCapAMG).mul(toBN(settings.assetMintingGranularityUBA));
             const priceReader = await TokenPriceReader.create(settings);
@@ -858,7 +956,6 @@ export class BotService implements OnModuleInit {
             const agentsToDelete = existingAgents.filter((agent) => !newAgentAddresses.has(agent.vaultAddress));
             const agentsLivenessToDelete = agentsLiveness.filter((agent) => !newAgentAddresses.has(agent.vaultAddress));
             const agentsToUpdate = existingAgents.filter((agent) => newAgentAddresses.has(agent.vaultAddress));
-
             // prefetch agentinfo
             const newAgentInfoPromises = newAgents.map((agent) => infoBot.context.assetManager.getAgentInfo(agent));
             const newAgentInfos = await Promise.all(newAgentInfoPromises);
@@ -1038,20 +1135,17 @@ export class BotService implements OnModuleInit {
                     });
                     mintedReservedUBA = mintedReservedUBA.add(toBN(info.mintedUBA)).add(toBN(info.reservedUBA));
                     mintedUBA = mintedUBA.add(toBN(info.mintedUBA));
-                    supplyFa.minted = sumUsdStrings(supplyFa.minted, mintedUSDFormatted);
-                    let allLots = mintedReservedLots.toNumber();
+                    //supplyFa.minted = sumUsdStrings(supplyFa.minted, mintedUSDFormatted);
+                    const allLots = mintedReservedLots.toNumber() + Number(info.freeCollateralLots);
                     if (mintingCap.toString() === "0") {
                         if ((Number(info.status) == 0 || Number(info.status) == 1) && info.publiclyAvailable == true) {
                             supplyFa.availableToMintLots = supplyFa.availableToMintLots + Number(info.freeCollateralLots);
                             supplyFa.availableToMintUSD = sumUsdStrings(supplyFa.availableToMintUSD, remainingUSDFormatted);
                         }
-                        allLots = allLots + Number(info.freeCollateralLots);
-                        supplyFa.allLots = supplyFa.allLots + allLots;
                     } else {
                         if ((Number(info.status) == 0 || Number(info.status) == 1) && info.publiclyAvailable == true) {
                             supplyFa.availableToMintLots = supplyFa.availableToMintLots + Number(info.freeCollateralLots);
                         }
-                        supplyFa.allLots = supplyFa.allLots + allLots;
                     }
                     const totalPortfolioValueUSD = sumUsdStrings(totalCollateralUSD, mintedUSDFormatted);
                     const limitUSD = sumUsdStrings(mintedUSDFormatted, remainingUSDFormatted);
@@ -1082,7 +1176,6 @@ export class BotService implements OnModuleInit {
                     const remainingUSD = info.freeCollateralLots.muln(formattedLotSize)*/
                     numLiq = numLiq + Number(numLiquidations);
                     numMints = numMints + Number(mintCount);
-                    const agentAllLots = mintingCap.toString() === "0" ? allLots : allLots + Number(info.freeCollateralLots);
                     const agentPool = new Pool(
                         agent,
                         fasset,
@@ -1115,7 +1208,7 @@ export class BotService implements OnModuleInit {
                         description,
                         mintedAssets,
                         mintedUSDFormatted,
-                        agentAllLots,
+                        allLots,
                         poolOnlyCollateralUSD,
                         vaultOnlyCollateralUSD,
                         remainingAssets.toString(),
@@ -1331,20 +1424,17 @@ export class BotService implements OnModuleInit {
                     //supplyFa.supply = sumUsdStrings(supplyFa.supply, mintedAssets);
                     mintedReservedUBA = mintedReservedUBA.add(toBN(info.mintedUBA)).add(toBN(info.reservedUBA));
                     mintedUBA = mintedUBA.add(toBN(info.mintedUBA));
-                    supplyFa.minted = sumUsdStrings(supplyFa.minted, mintedUSDFormatted);
-                    let allLots = mintedReservedLots.toNumber();
+                    //supplyFa.minted = sumUsdStrings(supplyFa.minted, mintedUSDFormatted);
+                    const allLots = mintedReservedLots.toNumber() + Number(info.freeCollateralLots);
                     if (mintingCap.toString() === "0") {
                         if ((Number(info.status) == 0 || Number(info.status) == 1) && info.publiclyAvailable == true) {
                             supplyFa.availableToMintLots = supplyFa.availableToMintLots + Number(info.freeCollateralLots);
                             supplyFa.availableToMintUSD = sumUsdStrings(supplyFa.availableToMintUSD, remainingUSDFormatted);
                         }
-                        allLots = allLots + Number(info.freeCollateralLots);
-                        supplyFa.allLots = supplyFa.allLots + allLots;
                     } else {
                         if ((Number(info.status) == 0 || Number(info.status) == 1) && info.publiclyAvailable == true) {
                             supplyFa.availableToMintLots = supplyFa.availableToMintLots + Number(info.freeCollateralLots);
                         }
-                        supplyFa.allLots = supplyFa.allLots + allLots;
                     }
                     const totalPortfolioValueUSD = sumUsdStrings(totalCollateralUSD, mintedUSDFormatted);
                     const limitUSD = sumUsdStrings(mintedUSDFormatted, remainingUSDFormatted);
@@ -1369,7 +1459,6 @@ export class BotService implements OnModuleInit {
                     } else {
                         supplyCollateral.push({ symbol: vaultCollateralType.tokenFtsoSymbol, supply: vaultCollateral, supplyUSD: vaultOnlyCollateralUSD });
                     }
-                    const agentAllLots = mintingCap.toString() === "0" ? allLots : allLots + Number(info.freeCollateralLots);
                     agent.poolCR = poolcr;
                     agent.agentName = name;
                     agent.url = urlIcon;
@@ -1393,7 +1482,7 @@ export class BotService implements OnModuleInit {
                     agent.vaultToken = info.vaultCollateralToken;
                     agent.handshakeType = Number(info.handshakeType);
                     agent.mintedUSD = mintedUSDFormatted;
-                    agent.allLots = agentAllLots;
+                    agent.allLots = allLots;
                     agent.poolOnlyCollateralUSD = poolOnlyCollateralUSD;
                     agent.vaultOnlyCollateralUSD = vaultOnlyCollateralUSD;
                     agent.mintedUBA = mintedAssets;
@@ -1417,8 +1506,10 @@ export class BotService implements OnModuleInit {
                     logger.error(`Error in getPools (update):`, error);
                 }
             }
+            const faSupply = await this.botMap.get(fasset).context.fAsset.totalSupply();
+            const mintedLots = toBN(faSupply).div(lotSizeUBA);
             if (mintingCap.toString() != "0") {
-                const availableToMintUBA = mintingCap.sub(mintedReservedUBA);
+                const availableToMintUBA = mintingCap.sub(toBN(faSupply));
                 const freeLotsUBA = toBN(supplyFa.availableToMintLots).mul(lotSizeUBA);
                 const availableLotsCap = Math.min(availableToMintUBA.div(lotSizeUBA).toNumber(), supplyFa.availableToMintLots);
                 supplyFa.availableToMintLots = Number(availableLotsCap);
@@ -1441,13 +1532,23 @@ export class BotService implements OnModuleInit {
                     groupSeparator: ",",
                 });
                 supplyFa.availableToMintUSD = availableToMintUSDFormatted;
-                supplyFa.allLots = supplyFa.allLots + Number(availableLotsCap);
+                supplyFa.allLots = mintedLots.toNumber() + Number(availableLotsCap);
+            } else {
+                supplyFa.mintedLots = toBN(mintedLots).toNumber();
+                supplyFa.allLots = supplyFa.availableToMintLots + supplyFa.mintedLots;
             }
+            const existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+            const faSupplyUSD = toBN(faSupply).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
+            supplyFa.minted = formatFixed(faSupplyUSD, Number(settings.assetDecimals), {
+                decimals: 3,
+                groupDigits: true,
+                groupSeparator: ",",
+            });
             if ((await this.em.count(Pool, { fasset })) == 0) {
                 //calculate price of fees
                 rewardsAvailableUSD = sumUsdStrings(rewardsAvailableUSD, "0");
                 logger.info(`Pools for fasset ${fasset} updated in: ${(Date.now() - start) / 1000}`);
-                supplyFa.supply = formatFixed(toBN(mintedUBA), Number(settings.assetDecimals), {
+                supplyFa.supply = formatFixed(toBN(faSupply), Number(settings.assetDecimals), {
                     decimals: fasset.includes("XRP") ? 3 : 6,
                     groupDigits: true,
                     groupSeparator: ",",
@@ -1463,7 +1564,6 @@ export class BotService implements OnModuleInit {
                 continue;
             }
             //calculate price of fees
-            const existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
             const feesAvailableUSD = toBN(feesAvailable).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
             const feesAvailableUSDFormatted = formatFixed(feesAvailableUSD, Number(settings.assetDecimals), {
                 decimals: 3,
@@ -1472,15 +1572,29 @@ export class BotService implements OnModuleInit {
             });
             rewardsAvailableUSD = sumUsdStrings(rewardsAvailableUSD, feesAvailableUSDFormatted);
             logger.info(`Pools for fasset ${fasset} updated in: ${(Date.now() - start) / 1000}`);
-            supplyFa.supply = formatFixed(toBN(mintedUBA), Number(settings.assetDecimals), {
+            supplyFa.supply = formatFixed(toBN(faSupply), Number(settings.assetDecimals), {
                 decimals: fasset.includes("XRP") ? 3 : 6,
                 groupDigits: true,
                 groupSeparator: ",",
             });
             if (supplyFa.allLots == 0) {
                 supplyFa.mintedPercentage = "0.00";
+                supplyFa.availableToMintAsset = "0";
             } else {
-                supplyFa.mintedPercentage = ((supplyFa.availableToMintLots / supplyFa.allLots) * 100).toFixed(2);
+                if (await this.botMap.get(fasset).context.assetManager.mintingPaused()) {
+                    supplyFa.mintedPercentage = ((supplyFa.availableToMintLots / supplyFa.allLots) * 100).toFixed(2);
+                    supplyFa.availableToMintAsset = "0";
+                    supplyFa.availableToMintLots = 0;
+                    supplyFa.availableToMintUSD = "0";
+                } else {
+                    supplyFa.mintedPercentage = ((supplyFa.availableToMintLots / supplyFa.allLots) * 100).toFixed(2);
+                    const availableToMintUBA = toBN(supplyFa.availableToMintLots).mul(toBN(lotSizeUBA));
+                    supplyFa.availableToMintAsset = formatFixed(availableToMintUBA, Number(settings.assetDecimals), {
+                        decimals: fasset.includes("XRP") ? 3 : 6,
+                        groupDigits: true,
+                        groupSeparator: ",",
+                    });
+                }
             }
             supplyFasset.push(supplyFa);
             const fa = NETWORK_SYMBOLS.find((fa) => (this.envType == "dev" ? fa.test : fa.real) === fasset);
@@ -1501,6 +1615,45 @@ export class BotService implements OnModuleInit {
             poolPaid.push({ fasset: fasset, rewards: rewardsAsset, rewardsUSD: rewardsAssetUSDFormatted });
             totalPoolPaidUSD = sumUsdStrings(totalPoolPaidUSD, rewardsAssetUSDFormatted);
 
+            //COre vault balance
+            if (fasset.includes("XRP")) {
+                const existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+                const getCoreVaultInflows = await this.externalApiService.getCVInflows(start);
+                const getCoreVaultOutflows = await this.externalApiService.getCVOutflows(start);
+                const coreVaultInflows = getCoreVaultInflows["FXRP"][0].value;
+                const coreVaultOutflows = getCoreVaultOutflows["FXRP"][0].value;
+                const inflowsUSD = toBN(coreVaultInflows).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
+                const outflowsUSD = toBN(coreVaultOutflows).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
+                this.coreVaultInflows = formatFixed(toBN(coreVaultInflows), 6, {
+                    decimals: 2,
+                    groupDigits: true,
+                    groupSeparator: ",",
+                });
+                this.coreVaultInflowsUSD = formatFixed(inflowsUSD, Number(settings.assetDecimals), {
+                    decimals: 2,
+                    groupDigits: true,
+                    groupSeparator: ",",
+                });
+                this.coreVaultOutflows = formatFixed(toBN(coreVaultOutflows), 6, {
+                    decimals: 2,
+                    groupDigits: true,
+                    groupSeparator: ",",
+                });
+                this.coreVaultOutflowsUSD = formatFixed(outflowsUSD, Number(settings.assetDecimals), {
+                    decimals: 2,
+                    groupDigits: true,
+                    groupSeparator: ",",
+                });
+                const cvTotal = toBN(coreVaultInflows).sub(toBN(coreVaultOutflows));
+                const cvTotalUSD = toBN(cvTotal).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
+                const cvTotalUSDFormatted = formatFixed(cvTotalUSD, Number(settings.assetDecimals), {
+                    decimals: 2,
+                    groupDigits: true,
+                    groupSeparator: ",",
+                });
+                this.coreVaultSupply = formatFixed(cvTotal, 6, { decimals: 2, groupDigits: true, groupSeparator: "," });
+                this.coreVaultSupplyUSD = cvTotalUSDFormatted;
+            }
             //Process top pools for this fasset
             //TODO change for real and production use
             const faNetw = NETWORK_SYMBOLS.find((n) => (this.envType == "dev" ? n.test : n.real) == fasset);
@@ -1558,6 +1711,7 @@ export class BotService implements OnModuleInit {
         if (Number(numTransactions) != 0 || Number(this.ecosystemTransactions) == 0) {
             this.ecosystemTransactions = numTransactions;
         }
+        //TODO change core vault supply to actual core vault balance
         logger.info(`Finish updating pools`);
     }
 
@@ -1597,6 +1751,12 @@ export class BotService implements OnModuleInit {
             numHolders: this.holders,
             agentCollateral: this.agentPoolCollateral,
             numRedeems: this.numRedeems,
+            coreVaultSupply: this.coreVaultSupply,
+            coreVaultSupplyUSD: this.coreVaultSupplyUSD,
+            coreVaultInflows: this.coreVaultInflows,
+            coreVaultInflowsUSD: this.coreVaultInflowsUSD,
+            coreVaultOutflows: this.coreVaultOutflows,
+            coreVaultOutflowsUSD: this.coreVaultOutflowsUSD,
         };
     }
 
@@ -1619,5 +1779,30 @@ export class BotService implements OnModuleInit {
 
     getSecrets(): Secrets {
         return this.secrets;
+    }
+
+    async updateRedemptionQueue(fasset: string): Promise<void> {
+        const bot = this.getInfoBot(fasset);
+        const settings = await bot.context.assetManager.getSettings();
+        const maxTickets = Number(settings.maxRedeemedTickets);
+        const lotSizeUBA = toBN(settings.lotSizeAMG).mul(toBN(settings.assetMintingGranularityUBA));
+        let maxSingleRedemtionTotal = toBN(0);
+        let maxShortTermRedemptionTotal = toBN(0);
+        let redemptionQueue = await bot.context.assetManager.redemptionQueue(0, maxTickets);
+        if (redemptionQueue[0].length == 0) {
+            await this.cacheManager.set(fasset + "maxLotsSingleRedeem", 0, 0);
+            await this.cacheManager.set(fasset + "maxLotsTotalRedeem", 0, 0);
+            return;
+        }
+        maxSingleRedemtionTotal = redemptionQueue[0].reduce((acc, num) => acc.add(toBN(num.ticketValueUBA)), toBN(0));
+        maxShortTermRedemptionTotal = maxSingleRedemtionTotal;
+        while (toBN(redemptionQueue[1]).toString() != "0") {
+            redemptionQueue = await bot.context.assetManager.redemptionQueue(toBN(redemptionQueue[1]).toString(), 20);
+            maxShortTermRedemptionTotal = maxShortTermRedemptionTotal.add(redemptionQueue[0].reduce((acc, num) => acc.add(toBN(num.ticketValueUBA)), toBN(0)));
+        }
+        const maxSingleLotsToRedeem = maxSingleRedemtionTotal.div(toBN(lotSizeUBA));
+        const maxShortTermLotsTotal = maxShortTermRedemptionTotal.div(toBN(lotSizeUBA));
+        await this.cacheManager.set(fasset + "maxLotsSingleRedeem", maxSingleLotsToRedeem, 0);
+        await this.cacheManager.set(fasset + "maxLotsTotalRedeem", maxShortTermLotsTotal, 0);
     }
 }

@@ -39,6 +39,9 @@ export class HistoryService {
         //const redeemTickets = await this.em.find(Redemption, { userAddress: userAddress.toLocaleLowerCase() })
         const userProgress: Progress[] = [];
         for (const mint of mints) {
+            if (!this.botService.fassetList.includes(mint.fasset)) {
+                continue;
+            }
             if (Number(mint.timestamp) < date) {
                 continue;
             }
@@ -90,6 +93,9 @@ export class HistoryService {
             }
             //Preparation for each default ticket
             for (const ticket of redeemTickets) {
+                if (!this.botService.fassetList.includes(ticket.fasset)) {
+                    continue;
+                }
                 const redemptionAmount = formatBNToDisplayDecimals(
                     ticketValueUBA,
                     ticket.fasset.includes("XRP") ? 2 : 8,

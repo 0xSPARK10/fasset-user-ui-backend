@@ -23,25 +23,37 @@ export async function bootstrap() {
     if (process.env.XRP_INDEXER_URLS) {
         const urlsArray = process.env.XRP_INDEXER_URLS.split(",");
         if (process.env.APP_TYPE == "dev") {
-            configContent.fAssets.FTestXRP.indexerUrls = urlsArray;
+            if (configContent?.fAssets?.FTestXRP) {
+                configContent.fAssets.FTestXRP.indexerUrls = urlsArray;
+            }
         } else {
-            configContent.fAssets.FXRP.indexerUrls = urlsArray;
+            if (configContent?.fAssets?.FXRP) {
+                configContent.fAssets.FXRP.indexerUrls = urlsArray;
+            }
         }
     }
     if (process.env.DOGE_INDEXER_URLS) {
         const urlsArray = process.env.DOGE_INDEXER_URLS.split(",");
         if (process.env.APP_TYPE == "dev") {
-            configContent.fAssets.FTestDOGE.indexerUrls = urlsArray;
+            if (configContent?.fAssets?.FTestDOGE) {
+                configContent.fAssets.FTestDOGE.indexerUrls = urlsArray;
+            }
         } else {
-            configContent.fAssets.FDOGE.indexerUrls = urlsArray;
+            if (configContent?.fAssets?.FDOGE) {
+                configContent.fAssets.FDOGE.indexerUrls = urlsArray;
+            }
         }
     }
     if (process.env.BTC_INDEXER_URLS) {
         const urlsArray = process.env.BTC_INDEXER_URLS.split(",");
         if (process.env.APP_TYPE == "dev") {
-            configContent.fAssets.FTestBTC.indexerUrls = urlsArray;
+            if (configContent?.fAssets?.FTestBTC) {
+                configContent.fAssets.FTestBTC.indexerUrls = urlsArray;
+            }
         } else {
-            configContent.fAssets.BTC.indexerUrls = urlsArray;
+            if (configContent?.fAssets?.FBTC) {
+                configContent.fAssets.FBTC.indexerUrls = urlsArray;
+            }
         }
     }
     if (process.env.RPC_URL) {
@@ -54,25 +66,37 @@ export async function bootstrap() {
     if (process.env.XRP_WALLET_URLS) {
         const urlsArray = process.env.XRP_WALLET_URLS.split(",");
         if (process.env.APP_TYPE == "dev") {
-            configContent.fAssets.FTestXRP.walletUrls = urlsArray;
+            if (configContent?.fAssets?.FTestXRP) {
+                configContent.fAssets.FTestXRP.walletUrls = urlsArray;
+            }
         } else {
-            configContent.fAssets.FXRP.walletUrls = urlsArray;
+            if (configContent?.fAssets?.FXRP) {
+                configContent.fAssets.FXRP.walletUrls = urlsArray;
+            }
         }
     }
     if (process.env.DOGE_WALLET_URLS) {
         const urlsArray = process.env.DOGE_WALLET_URLS.split(",");
         if (process.env.APP_TYPE == "dev") {
-            configContent.fAssets.FTestDOGE.walletUrls = urlsArray;
+            if (configContent?.fAssets?.FTestDOGE) {
+                configContent.fAssets.FTestDOGE.walletUrls = urlsArray;
+            }
         } else {
-            configContent.fAssets.FDOGE.walletUrls = urlsArray;
+            if (configContent?.fAssets?.FDOGE) {
+                configContent.fAssets.FDOGE.walletUrls = urlsArray;
+            }
         }
     }
     if (process.env.BTC_WALLET_URLS) {
         const urlsArray = process.env.BTC_WALLET_URLS.split(",");
         if (process.env.APP_TYPE == "dev") {
-            configContent.fAssets.FTestBTC.walletUrls = urlsArray;
+            if (configContent?.fAssets?.FTestBTC) {
+                configContent.fAssets.FTestBTC.walletUrls = urlsArray;
+            }
         } else {
-            configContent.fAssets.FBTC.walletUrls = urlsArray;
+            if (configContent?.fAssets?.FBTC) {
+                configContent.fAssets.FBTC.walletUrls = urlsArray;
+            }
         }
     }
     writeFileSync(filePathConfig, JSON.stringify(configContent, null, 4), "utf-8");

@@ -35,8 +35,6 @@ import { RedemptionRejected } from "./entities/RedemptionRejected";
 import { RedemptionRequested } from "./entities/RedemptionRequested";
 import { RedemptionTakenOver } from "./entities/RedemptionTakenOver";
 import { RedemptionDefaultEvent } from "./entities/RedemptionDefaultEvent";
-import { RewardsController } from "./controllers/rewards.controller";
-import { RewardsService } from "./services/rewarding.service";
 import { UnderlyingPayment } from "./entities/UnderlyingPayment";
 import { IndexerState } from "./entities/IndexerState";
 import { MintingDefaultEvent } from "./entities/MintingDefaultEvent";
@@ -78,28 +76,8 @@ import { HistoryService } from "./services/userHistory.service";
         }),
         CacheModule.register({}),
     ],
-    controllers: [
-        UserController,
-        BalanceController,
-        RedemptionController,
-        MintController,
-        PoolController,
-        HealthController,
-        SwaggerController,
-        RewardsController,
-    ],
-    providers: [
-        MikroOrmHealthIndicator,
-        UserService,
-        CleaningService,
-        BotService,
-        RunnerService,
-        ExternalApiService,
-        RewardsService,
-        PoolService,
-        UtxoService,
-        HistoryService,
-    ],
+    controllers: [UserController, BalanceController, RedemptionController, MintController, PoolController, HealthController, SwaggerController],
+    providers: [MikroOrmHealthIndicator, UserService, CleaningService, BotService, RunnerService, ExternalApiService, PoolService, UtxoService, HistoryService],
     exports: [BotService, UserService, PoolService, UtxoService, HistoryService],
 })
 export class AppModule implements NestModule {

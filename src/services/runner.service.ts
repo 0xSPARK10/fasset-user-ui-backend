@@ -228,6 +228,12 @@ export class RunnerService implements OnApplicationBootstrap {
                         if (proof === AttestationNotProved.NOT_FINALIZED) {
                             //console.log("Proof not finalized");
                             if (await this.userBotMap.get(fasset).context.attestationProvider.roundFinalized(minting.proofRequestRound)) {
+                                proof = await this.userBotMap
+                                    .get(fasset)
+                                    .context.attestationProvider.obtainPaymentProof(minting.proofRequestRound, minting.proofRequestData);
+                                if (attestationProved(proof)) {
+                                    continue;
+                                }
                                 minting.state = false;
                                 minting.proofRequestData = null;
                                 minting.proofRequestRound = null;
@@ -536,6 +542,10 @@ export class RunnerService implements OnApplicationBootstrap {
                                 await this.em.persistAndFlush(redemption);
                             } catch (error) {
                                 if (error.message.includes("invalid redemption status")) {
+                                    redemption.processed = true;
+                                    await this.em.persistAndFlush(redemption);
+                                }
+                                if (error.message.includes("invalid request id")) {
                                     redemption.processed = true;
                                     await this.em.persistAndFlush(redemption);
                                 }

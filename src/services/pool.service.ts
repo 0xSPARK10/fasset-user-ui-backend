@@ -169,6 +169,7 @@ export class PoolService {
                                     infoUrl: agent.infoUrl,
                                     lifetimeClaimedPoolFormatted: "0",
                                     lifetimeClaimedPoolUSDFormatted: "0",
+                                    userPoolTokensFull: "0",
                                 };
                                 pools.push(agentPool);
                                 continue;
@@ -256,6 +257,7 @@ export class PoolService {
                                     limitUSD: agent.limitUSD,
                                     lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
                                     lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
+                                    userPoolTokensFull: balance.toString(),
                                 };
                                 pools.push(agentPool);
                                 continue;
@@ -377,6 +379,7 @@ export class PoolService {
                                 infoUrl: agent.infoUrl,
                                 lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
                                 lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
+                                userPoolTokensFull: balance.toString(),
                             };
                             pools.push(agentPool);
                         } catch (error) {
@@ -482,6 +485,7 @@ export class PoolService {
                             infoUrl: agent.infoUrl,
                             lifetimeClaimedPoolFormatted: "0",
                             lifetimeClaimedPoolUSDFormatted: "0",
+                            userPoolTokensFull: balance.toString(),
                         };
                         pools.push(agentPool);
                         continue;
@@ -603,6 +607,7 @@ export class PoolService {
                         infoUrl: agent.infoUrl,
                         lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
                         lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
+                        userPoolTokensFull: balance.toString(),
                     };
                     pools.push(agentPool);
                 } catch (error) {

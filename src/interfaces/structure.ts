@@ -46,6 +46,8 @@ export interface SupplyFasset {
     availableToMintLots: number;
     allLots: number;
     mintedPercentage: string;
+    availableToMintAsset: string;
+    mintedLots: number;
 }
 
 export interface SupplyTotalCollateral {
@@ -61,6 +63,11 @@ export interface FassetTimeSupply {
 
 export interface FassetSupplyDiff {
     fasset: string;
+    diff: string;
+    isPositive: boolean;
+}
+
+export interface GenericDiff {
     diff: string;
     isPositive: boolean;
 }
@@ -113,6 +120,19 @@ export interface TimeData {
     bestPools: TopPool[];
     totalCollateralDiff: string;
     isPositiveCollateralDiff: boolean;
+    coreVaultData: TimeDataCV;
+}
+
+export interface TimeDataCV {
+    supplyDiff: string;
+    isPositiveSupplyDiff: boolean;
+    inflowGraph: TimeSeries[];
+    outflowGraph: TimeSeries[];
+    inflowDiff: string;
+    isPositiveInflowDiff: boolean;
+    outflowDiff: string;
+    isPositiveOutflowDiff: boolean;
+    tvlGraph: TimeSeries[];
 }
 
 export interface PoolRewards {
@@ -140,6 +160,12 @@ export interface EcosystemData {
     numHolders: number;
     agentCollateral: string;
     numRedeems: number;
+    coreVaultSupply: string;
+    coreVaultSupplyUSD: string;
+    coreVaultInflows: string;
+    coreVaultInflowsUSD: string;
+    coreVaultOutflows: string;
+    coreVaultOutflowsUSD: string;
 }
 
 export interface AssetManagerFasset {
