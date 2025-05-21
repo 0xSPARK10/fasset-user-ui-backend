@@ -1508,6 +1508,7 @@ export class BotService implements OnModuleInit {
             }
             const faSupply = await this.botMap.get(fasset).context.fAsset.totalSupply();
             const mintedLots = toBN(faSupply).div(lotSizeUBA);
+            supplyFa.mintedLots = toBN(mintedLots).toNumber();
             if (mintingCap.toString() != "0") {
                 const availableToMintUBA = mintingCap.sub(toBN(faSupply));
                 const freeLotsUBA = toBN(supplyFa.availableToMintLots).mul(lotSizeUBA);
@@ -1523,9 +1524,12 @@ export class BotService implements OnModuleInit {
                     });
                     existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
                 }
-                const availableToMintUSD = toBN(Math.min(availableToMintUBA.toNumber(), freeLotsUBA.toNumber()))
-                    .mul(existingPriceAsset.price)
-                    .div(toBNExp(1, Number(existingPriceAsset.decimals)));
+                const availableToMintUSD =
+                    Number(availableLotsCap) == 0
+                        ? toBN(0)
+                        : toBN(Math.min(availableToMintUBA.toNumber(), freeLotsUBA.toNumber()))
+                              .mul(existingPriceAsset.price)
+                              .div(toBNExp(1, Number(existingPriceAsset.decimals)));
                 const availableToMintUSDFormatted = formatFixed(availableToMintUSD, Number(settings.assetDecimals), {
                     decimals: 3,
                     groupDigits: true,
@@ -1534,7 +1538,6 @@ export class BotService implements OnModuleInit {
                 supplyFa.availableToMintUSD = availableToMintUSDFormatted;
                 supplyFa.allLots = mintedLots.toNumber() + Number(availableLotsCap);
             } else {
-                supplyFa.mintedLots = toBN(mintedLots).toNumber();
                 supplyFa.allLots = supplyFa.availableToMintLots + supplyFa.mintedLots;
             }
             const existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
