@@ -5,9 +5,9 @@ services:
     image: postgres:13
     container_name: ${COMPOSE_PROJECT_NAME}-postgres
     environment:
-      POSTGRES_DB: executor_minting_redemptions
-      POSTGRES_USER: executor
-      POSTGRES_PASSWORD: executor
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
         - postgres_data:/var/lib/postgresql/data
        #- /var/lib/postgresql/data

@@ -538,6 +538,9 @@ export class UserService {
     }
 
     async estimateFeeForBlocks(fasset: string): Promise<FeeEstimate> {
+        if (fasset.includes("XRP")) {
+            return { estimatedFee: "1000", extraBTC: "0.0045" };
+        }
         const feeName = fasset.includes("BTC") ? "btcFee" : "dogeFee";
         let btcFee = await this.cacheManager.get(feeName);
         const bot = this.botService.getUserBot(fasset);

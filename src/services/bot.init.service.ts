@@ -113,6 +113,7 @@ export class BotService implements OnModuleInit {
     holders: number = 0;
     topPools: TopPoolData[] = [];
     envType: string;
+    network: string;
     agentPoolCollateral: string = "0";
     coreVaultSupply: string = "0";
     coreVaultSupplyUSD: string = "0";
@@ -133,6 +134,7 @@ export class BotService implements OnModuleInit {
         this.username = this.configService.get<string>("USER_API");
         this.password = this.configService.get<string>("PASS_API");
         this.envType = this.configService.get<string>("APP_TYPE");
+        this.network = this.configService.get<string>("NETWORK", "coston-bot.json");
     }
 
     async onModuleInit() {
@@ -140,7 +142,7 @@ export class BotService implements OnModuleInit {
         this.em = this.orm.em.fork();
         let pathForConfig = this.costonBotPath;
         if (!pathForConfig) {
-            pathForConfig = this.envType == "dev" ? "coston-bot.json" : "songbird-bot.json";
+            pathForConfig = this.network + "-bot.json";
         }
         // Initialize the variable here
         const filePathSecrets = join(__dirname, "../..", "src", "secrets.json");

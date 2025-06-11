@@ -23,6 +23,7 @@ export class RewardsService {
     private flrDecimals: number;
     private rewardsAPI: string;
     private rewardsKey: string;
+    private network: string;
 
     constructor(
         private readonly configService: ConfigService,
@@ -33,6 +34,7 @@ export class RewardsService {
         const apiKey = this.configService.get<string>("FLR_RPC_API_KEY");
         this.rewardsAPI = this.configService.get<string>("REWARDS_API");
         this.rewardsKey = this.configService.get<string>("REWARDS_API_KEY");
+        this.network = this.configService.get<string>("NETWORK", "coston-bot.json");
         const connection = new FetchRequest(rpcUrl);
         if (apiKey !== undefined) {
             connection.setHeader("x-api-key", apiKey);
@@ -46,7 +48,7 @@ export class RewardsService {
         this.contract = new ethers.Contract(contractAddress, contractAbi, this.provider);
         this.projectId = 4;
 
-        const pathForConfig = process.env.APP_TYPE == "dev" ? "coston-bot.json" : "songbird-bot.json";
+        const pathForConfig = this.network + "-bot.json";
         const filePathConfig = join(__dirname, "../..", "src", pathForConfig);
         const configFile = readFileSync(filePathConfig, "utf-8");
         const configContent = JSON.parse(configFile);

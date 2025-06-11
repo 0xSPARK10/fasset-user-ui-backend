@@ -15,7 +15,7 @@ export async function bootstrap() {
     await initializeMikroORM();
     let pathForConfig = process.env.BOT_CONFIG_PATH;
     if (!pathForConfig) {
-        pathForConfig = process.env.APP_TYPE == "dev" ? "coston-bot.json" : "songbird-bot.json";
+        pathForConfig = process.env.NETWORK ? process.env.NETWORK + "-bot.json" : "coston-bot.json";
     }
     const filePathConfig = join(__dirname, "../", "src", pathForConfig);
     const configFile = readFileSync(filePathConfig, "utf-8");

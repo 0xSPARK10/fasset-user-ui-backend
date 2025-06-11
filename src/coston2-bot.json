@@ -1,0 +1,80 @@
+{
+    "$schema": "./schema/bot-config.schema.json",
+    "loopDelay": 1000,
+    "contractsJsonFile": "../fasset-deployment/coston2.json",
+    "prioritizeAddressUpdater": false,
+    "nativeChainInfo": {
+        "chainName": "Coston2",
+        "tokenSymbol": "C2FLR",
+        "finalizationBlocks": 6,
+        "readLogsChunkSize": 30,
+        "recommendedOwnerBalance": "10",
+        "faucet": "https://faucet.flare.network"
+    },
+    "fAssets": {
+        "FTestXRP": {
+            "chainId": "testXRP",
+            "tokenName": "Test XRP",
+            "tokenSymbol": "testXRP",
+            "tokenDecimals": 6,
+            "indexerUrls": [
+                ""
+            ],
+            "walletUrls": [
+                ""
+            ],
+            "minimumAccountBalance": "1",
+            "faucet": "https://faucet.tequ.dev/",
+            "priceChangeEmitter": "FtsoV2PriceStore"
+        }
+    },
+    "agentBotSettings": {
+        "parallel": false,
+        "liquidationPreventionFactor": "1.2",
+        "vaultCollateralReserveFactor": "0.1",
+        "poolCollateralReserveFactor": "0.1",
+        "trustedPingSenders": [
+            "0x8B7843E9768599EEF1136e59380e6F79dB6fb901",
+            "0x459BC23f08f0091A15cc3871c325463DeA609905"
+        ],
+        "minBalanceOnServiceAccount": "2",
+        "minBalanceOnWorkAccount": "200",
+        "defaultAgentSettings": {
+            "fee": "0.25%",
+            "poolFeeShare": "40%",
+            "mintingVaultCollateralRatio": "1.4",
+            "mintingPoolCollateralRatio": "1.7",
+            "poolExitCollateralRatio": "1.6",
+            "poolTopupCollateralRatio": "1.5",
+            "poolTopupTokenPriceFactor": "0.995",
+            "buyFAssetByAgentFactor": "0.99",
+            "handshakeType": 0
+        },
+        "fAssets": {
+            "FTestXRP": {
+                "recommendedOwnerBalance": "50",
+                "minimumFreeUnderlyingBalance": "0.01",
+                "feeSafetyFactorPerKB": 0
+            }
+        }
+    },
+    "rpcUrl": "",
+    "dataAccessLayerUrls": [
+        ""
+    ],
+    "ormOptions": {
+        "type": "sqlite",
+        "dbName": "fasset-bots-coston2.CONTROLLER.db",
+        "allowGlobalContext": true,
+        "pool": {
+            "min": 0,
+            "max": 2
+        }
+    },
+    "liquidationStrategy": {
+        "className": "DefaultLiquidationStrategy"
+    },
+    "challengeStrategy": {
+        "className": "DefaultChallengeStrategy"
+    }
+}

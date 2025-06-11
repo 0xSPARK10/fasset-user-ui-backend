@@ -25,6 +25,7 @@ import { AttestationNotProved } from "node_modules/@flarelabs/fasset-bots-core/d
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
+import { ITransaction } from "node_modules/@flarelabs/fasset-bots-core/src/underlying-chain/interfaces/IBlockChain";
 
 enum RedemptionStatus {
     EXPIRED = "EXPIRED",
@@ -118,6 +119,19 @@ export class RunnerService implements OnApplicationBootstrap {
         return null;
     }
 
+    private getSpecificTransaction(txs: ITransaction[], underlyingAddress: string, amountUBA: string): ITransaction | null {
+        for (const tx of txs) {
+            const amount = sumBN(
+                tx.outputs.filter((o) => o[0] === underlyingAddress),
+                (o) => o[1]
+            );
+            if (amount.gte(toBN(amountUBA))) {
+                return tx;
+            }
+        }
+        return null;
+    }
+
     private async processMintings(fasset: string) {
         //this.logger.debug('Looking for unprocessed minting...');
         //TODO fix query to get unprocessed mintings younger than 1 day.
@@ -146,11 +160,19 @@ export class RunnerService implements OnApplicationBootstrap {
                         paymentReference: minting.paymentReference,
                     });
                     if (!underlyingPayment) {
+                        const crt = await this.em.findOne(CollateralReservationEvent, {
+                            paymentReference: minting.paymentReference,
+                        });
+                        if (!crt) {
+                            continue;
+                        }
                         const txs = await this.userBotMap.get(fasset).context.blockchainIndexer.getTransactionsByReference(minting.paymentReference);
                         if (txs.length == 0) {
                             continue;
                         }
-                        minting.txhash = txs[0].hash;
+                        const amount = toBN(crt.feeUBA).add(toBN(crt.valueUBA));
+                        const transaction = this.getSpecificTransaction(txs, minting.paymentAddress, amount.toString());
+                        minting.txhash = transaction.hash;
                         await this.em.persistAndFlush(minting);
                     } else {
                         minting.txhash = underlyingPayment.underlyingHash;
@@ -191,6 +213,13 @@ export class RunnerService implements OnApplicationBootstrap {
                                 .context.attestationProvider.requestPaymentProof(minting.txhash, null, minting.paymentAddress);
                         } catch (error) {
                             logger.error(`Error in processMintings (request payment proof):`, error);
+                            if (error.message.includes("not used in transaction")) {
+                                minting.txhash = null;
+                                await this.em.persistAndFlush(minting);
+                                await this.em.nativeDelete(UnderlyingPayment, {
+                                    paymentReference: minting.paymentReference,
+                                });
+                            }
                             continue;
                         }
                     }

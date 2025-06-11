@@ -41,6 +41,8 @@ import { MintingDefaultEvent } from "./entities/MintingDefaultEvent";
 import { PoolService } from "./services/pool.service";
 import { UtxoService } from "./services/utxo.service";
 import { HistoryService } from "./services/userHistory.service";
+import { EarnController } from "./controllers/earn.controller";
+import { EarnService } from "./services/earn.service";
 
 @Module({
     imports: [
@@ -76,8 +78,19 @@ import { HistoryService } from "./services/userHistory.service";
         }),
         CacheModule.register({}),
     ],
-    controllers: [UserController, BalanceController, RedemptionController, MintController, PoolController, HealthController, SwaggerController],
-    providers: [MikroOrmHealthIndicator, UserService, CleaningService, BotService, RunnerService, ExternalApiService, PoolService, UtxoService, HistoryService],
+    controllers: [UserController, BalanceController, RedemptionController, MintController, PoolController, HealthController, SwaggerController, EarnController],
+    providers: [
+        MikroOrmHealthIndicator,
+        UserService,
+        CleaningService,
+        BotService,
+        RunnerService,
+        ExternalApiService,
+        PoolService,
+        UtxoService,
+        HistoryService,
+        EarnService,
+    ],
     exports: [BotService, UserService, PoolService, UtxoService, HistoryService],
 })
 export class AppModule implements NestModule {
