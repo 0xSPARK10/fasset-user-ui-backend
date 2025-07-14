@@ -24,6 +24,19 @@
             ],
             "minimumAccountBalance": "1",
             "priceChangeEmitter": "FtsoV2PriceStore"
+        },
+        "FDOGE": {
+            "chainId": "DOGE",
+            "tokenName": "DOGE",
+            "tokenSymbol": "DOGE",
+            "tokenDecimals": 8,
+            "indexerUrls": [
+                ""
+            ],
+            "walletUrls": [
+                ""
+            ],
+            "priceChangeEmitter": "FtsoV2PriceStore"
         }
     },
     "agentBotSettings": {
@@ -52,6 +65,11 @@
             "FXRP": {
                 "recommendedOwnerBalance": "50",
                 "minimumFreeUnderlyingBalance": "0.01",
+                "feeSafetyFactorPerKB": 0
+            },
+            "FDOGE": {
+                "recommendedOwnerBalance": "50",
+                "minimumFreeUnderlyingBalance": "20",
                 "feeSafetyFactorPerKB": 0
             }
         }

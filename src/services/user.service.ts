@@ -232,6 +232,9 @@ export class UserService {
     async checkStateFassets(): Promise<any> {
         const stateF = [];
         for (const f of this.botService.fassetList) {
+            if (f.includes("DOGE")) {
+                continue;
+            }
             const bot = this.botService.getInfoBot(f);
             const state = await bot.context.assetManager.emergencyPaused();
             const stateTransfer = await bot.context.assetManager.transfersEmergencyPaused();
@@ -816,6 +819,9 @@ export class UserService {
         //FBTC and other fassets
         const fassets = this.listAvailableFassets();
         for (const fasset of fassets.fassets) {
+            if (fasset.includes("DOGE")) {
+                continue;
+            }
             const fBot = this.botService.getUserBot(fasset);
             const settingsAsset = await fBot.context.assetManager.getSettings();
             const redemptionFee = settings.redemptionFeeBIPS;

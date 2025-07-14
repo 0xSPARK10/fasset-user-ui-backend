@@ -134,7 +134,7 @@ export class BotService implements OnModuleInit {
         this.username = this.configService.get<string>("USER_API");
         this.password = this.configService.get<string>("PASS_API");
         this.envType = this.configService.get<string>("APP_TYPE");
-        this.network = this.configService.get<string>("NETWORK", "coston-bot.json");
+        this.network = this.configService.get<string>("NETWORK", "coston");
     }
 
     async onModuleInit() {
@@ -264,6 +264,9 @@ export class BotService implements OnModuleInit {
         //TODO fix test, production
         const diffs: FassetSupplyDiff[] = [];
         for (const f of this.fassetList) {
+            if (f.includes("DOGE")) {
+                continue;
+            }
             const netw = NETWORK_SYMBOLS.find((item) => (this.envType == "dev" ? item.test : item.real) === f);
             if (supply[netw.real]) {
                 const data = supply[netw.real];
@@ -424,6 +427,9 @@ export class BotService implements OnModuleInit {
             const supply = await this.externalApiService.getFassetSupplyDiff(dayTimestamp.toString(), now.toString());
             if (this.isEmptyObject(supply)) {
                 for (const f of this.fassetList) {
+                    if (f.includes("DOGE")) {
+                        continue;
+                    }
                     diffs.push({ fasset: f, diff: "0.0", isPositive: true });
                 }
             } else {
@@ -566,7 +572,7 @@ export class BotService implements OnModuleInit {
                     for (const e of allEvents) {
                         const event = e as any;
                         const am = this.assetManagerList.find((am) => am.assetManager === event.address);
-                        if (!am) {
+                        if (!am || am.fasset.includes("DOGE")) {
                             continue;
                         }
                         if (event.event === "AgentPingResponse") {
@@ -1507,6 +1513,9 @@ export class BotService implements OnModuleInit {
                 } catch (error) {
                     logger.error(`Error in getPools (update):`, error);
                 }
+            }
+            if (fasset.includes("DOGE")) {
+                continue;
             }
             const faSupply = await this.botMap.get(fasset).context.fAsset.totalSupply();
             const mintedLots = toBN(faSupply).div(lotSizeUBA);

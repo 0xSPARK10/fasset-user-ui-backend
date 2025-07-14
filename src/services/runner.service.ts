@@ -59,6 +59,9 @@ export class RunnerService implements OnApplicationBootstrap {
             try {
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 for (const [fasset, userBot] of this.userBotMap) {
+                    if (fasset.includes("DOGE")) {
+                        continue;
+                    }
                     //TODO: make this in parallel for each fasset (when mysql will be used)
                     await this.processMintings(fasset);
                     await this.processRedemptions(fasset);

@@ -14,6 +14,7 @@ import { formatBNToDisplayDecimals } from "src/utils/utils";
 import { logger } from "src/logger/winston.logger";
 import { Collateral } from "src/entities/Collaterals";
 import { ExternalApiService } from "./external.api.service";
+import { ConfigService } from "@nestjs/config";
 
 const NUM_RETRIES = 3;
 const IERC20 = artifacts.require("IERC20Metadata");
@@ -25,7 +26,8 @@ export class PoolService {
     constructor(
         private readonly botService: BotService,
         private readonly externalApiService: ExternalApiService,
-        private readonly em: EntityManager
+        private readonly em: EntityManager,
+        private readonly configService: ConfigService
     ) {}
 
     async getTokenBalanceFromIndexer(userAddress: string): Promise<IndexerTokenBalances[]> {
@@ -67,6 +69,15 @@ export class PoolService {
     async getPools(fassets: string[], address: string): Promise<AgentPoolItem[]> {
         if (address === "undefined") {
             return;
+        }
+        if (this.configService.get<string>("NETWORK") == "songbird") {
+            if (this.botService.getInfoBot("FDOGE")) {
+                fassets.push("FDOGE");
+            }
+        } else {
+            if (this.botService.getInfoBot("FTestDOGE")) {
+                fassets.push("FTestDOGE");
+            }
         }
         //const a = await web3.utils.toChecksumAddress(address);
         const cptokenBalances = await this.getTokenBalanceFromIndexer(address);
@@ -626,7 +637,15 @@ export class PoolService {
         try {
             const pools = [];
             const now = Date.now();
-
+            if (this.configService.get<string>("NETWORK") == "songbird") {
+                if (this.botService.getInfoBot("FDOGE")) {
+                    fassets.push("FDOGE");
+                }
+            } else {
+                if (this.botService.getInfoBot("FTestDOGE")) {
+                    fassets.push("FTestDOGE");
+                }
+            }
             for (const fasset of fassets) {
                 const agents = await this.em.find(Pool, { fasset });
                 const bot = this.botService.getUserBot(fasset);
