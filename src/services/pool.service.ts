@@ -74,10 +74,6 @@ export class PoolService {
             if (this.botService.getInfoBot("FDOGE")) {
                 fassets.push("FDOGE");
             }
-        } else {
-            if (this.botService.getInfoBot("FTestDOGE")) {
-                fassets.push("FTestDOGE");
-            }
         }
         //const a = await web3.utils.toChecksumAddress(address);
         const cptokenBalances = await this.getTokenBalanceFromIndexer(address);
@@ -123,7 +119,7 @@ export class PoolService {
                             const vaultCollateral = vaultCollaterals[0];
                             const poolCollateral = poolCollaterals[0];
                             if (!info) {
-                                if (agent.status == 3) {
+                                if (agent.status == 3 || agent.fasset.includes("DOGE")) {
                                     continue;
                                 }
                                 const agentPool = {
@@ -189,7 +185,11 @@ export class PoolService {
                             const pool = await CollateralPool.at(agent.poolAddress);
                             const poolToken = await CollateraPoolToken.at(agent.tokenAddress);
                             const balance = toBN(await poolToken.balanceOf(address));
-                            if (balance.eqn(0)) {
+                            const balanceFormated = formatBNToDisplayDecimals(balance, 3, 18);
+                            if (balance.eqn(0) || balanceFormated == "0") {
+                                if (agent.fasset.includes("DOGE")) {
+                                    continue;
+                                }
                                 const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress);
                                 let lifetimeClaimedPool = "0";
                                 if (Object.keys(claimedPools).length != 0) {
@@ -273,7 +273,6 @@ export class PoolService {
                                 pools.push(agentPool);
                                 continue;
                             }
-                            const balanceFormated = formatBNToDisplayDecimals(balance, 3, 18);
                             const poolNatBalance = toBN(await pool.totalCollateral()); // collateral in pool (for example # of SGB in pool)
                             const totalSupply = toBN(await poolToken.totalSupply()); // all issued collateral pool tokens
                             //If formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
@@ -411,7 +410,11 @@ export class PoolService {
                 if (i < NUM_RETRIES - 1) {
                     await new Promise((resolve) => setTimeout(resolve, 2000));
                 } else {
-                    logger.error("Error in getPools: ", error);
+                    if (error.message.includes("undefined")) {
+                        logger.warn("Error in getPools: ", error);
+                    } else {
+                        logger.error("Error in getPools: ", error);
+                    }
                 }
             }
         }
@@ -637,15 +640,6 @@ export class PoolService {
         try {
             const pools = [];
             const now = Date.now();
-            if (this.configService.get<string>("NETWORK") == "songbird") {
-                if (this.botService.getInfoBot("FDOGE")) {
-                    fassets.push("FDOGE");
-                }
-            } else {
-                if (this.botService.getInfoBot("FTestDOGE")) {
-                    fassets.push("FTestDOGE");
-                }
-            }
             for (const fasset of fassets) {
                 const agents = await this.em.find(Pool, { fasset });
                 const bot = this.botService.getUserBot(fasset);

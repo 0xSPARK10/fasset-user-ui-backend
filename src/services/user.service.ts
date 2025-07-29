@@ -1508,6 +1508,9 @@ export class UserService {
     async getMintingEnabled(): Promise<FassetStatus[]> {
         const fassetStatus: FassetStatus[] = [];
         for (const f of this.botService.fassetList) {
+            if (f.includes("DOGE")) {
+                continue;
+            }
             const bot = this.botService.getInfoBot(f);
             fassetStatus.push({ fasset: f, status: !(await bot.context.assetManager.mintingPaused()) });
         }
