@@ -1,0 +1,10 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IReferencedPaymentNonexistence",
+  "sourceName": "@flarenetwork/flare-periphery-contracts/flare/IReferencedPaymentNonexistence.sol",
+  "abi": [],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

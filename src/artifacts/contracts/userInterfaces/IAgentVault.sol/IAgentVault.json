@@ -5,106 +5,34 @@
   "abi": [
     {
       "inputs": [],
+      "name": "AlreadyInitialized",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyAssetManager",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyNonCollateralTokens",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyOwner",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "UnknownToken",
+      "type": "error"
+    },
+    {
+      "inputs": [],
       "name": "buyCollateralPoolTokens",
       "outputs": [],
       "stateMutability": "payable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IDistributionToDelegators",
-          "name": "_distribution",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_month",
-          "type": "uint256"
-        },
-        {
-          "internalType": "address payable",
-          "name": "_recipient",
-          "type": "address"
-        }
-      ],
-      "name": "claimAirdropDistribution",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IRewardManager",
-          "name": "_rewardManager",
-          "type": "address"
-        },
-        {
-          "internalType": "uint24",
-          "name": "_lastRewardEpoch",
-          "type": "uint24"
-        },
-        {
-          "internalType": "address payable",
-          "name": "_recipient",
-          "type": "address"
-        },
-        {
-          "components": [
-            {
-              "internalType": "bytes32[]",
-              "name": "merkleProof",
-              "type": "bytes32[]"
-            },
-            {
-              "components": [
-                {
-                  "internalType": "uint24",
-                  "name": "rewardEpochId",
-                  "type": "uint24"
-                },
-                {
-                  "internalType": "bytes20",
-                  "name": "beneficiary",
-                  "type": "bytes20"
-                },
-                {
-                  "internalType": "uint120",
-                  "name": "amount",
-                  "type": "uint120"
-                },
-                {
-                  "internalType": "enum RewardsV2Interface.ClaimType",
-                  "name": "claimType",
-                  "type": "uint8"
-                }
-              ],
-              "internalType": "struct RewardsV2Interface.RewardClaim",
-              "name": "body",
-              "type": "tuple"
-            }
-          ],
-          "internalType": "struct RewardsV2Interface.RewardClaimWithProof[]",
-          "name": "_proofs",
-          "type": "tuple[]"
-        }
-      ],
-      "name": "claimDelegationRewards",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -123,47 +51,6 @@
     {
       "inputs": [
         {
-          "internalType": "contract IVPToken",
-          "name": "_token",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "_to",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_bips",
-          "type": "uint256"
-        }
-      ],
-      "name": "delegate",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IVPToken",
-          "name": "_token",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "_to",
-          "type": "address"
-        }
-      ],
-      "name": "delegateGovernance",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
           "internalType": "contract IERC20",
           "name": "_token",
           "type": "address"
@@ -175,19 +62,6 @@
         }
       ],
       "name": "depositCollateral",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IDistributionToDelegators",
-          "name": "_distribution",
-          "type": "address"
-        }
-      ],
-      "name": "optOutOfAirdrop",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -213,29 +87,6 @@
     {
       "inputs": [
         {
-          "internalType": "contract IVPToken",
-          "name": "_token",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "_who",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_blockNumber",
-          "type": "uint256"
-        }
-      ],
-      "name": "revokeDelegationAt",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
           "internalType": "contract IERC20",
           "name": "_token",
           "type": "address"
@@ -247,32 +98,6 @@
         }
       ],
       "name": "transferExternalToken",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IVPToken",
-          "name": "_token",
-          "type": "address"
-        }
-      ],
-      "name": "undelegateAll",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IVPToken",
-          "name": "_token",
-          "type": "address"
-        }
-      ],
-      "name": "undelegateGovernance",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

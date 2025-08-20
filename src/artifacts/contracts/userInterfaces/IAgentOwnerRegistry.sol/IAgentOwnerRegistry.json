@@ -4,6 +4,16 @@
   "sourceName": "contracts/userInterfaces/IAgentOwnerRegistry.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "AgentNotWhitelisted",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "WorkAddressInUse",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {

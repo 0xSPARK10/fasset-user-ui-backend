@@ -75,9 +75,6 @@ export class Pool {
     publiclyAvailable: boolean;
 
     @Property({ type: "decimal", precision: 10, scale: 2 })
-    poolTopupCR: number;
-
-    @Property({ type: "decimal", precision: 10, scale: 2 })
     mintingPoolCR: number;
 
     @Property({ type: "decimal", precision: 10, scale: 2 })
@@ -85,9 +82,6 @@ export class Pool {
 
     @Property()
     vaultToken: string;
-
-    @Property({ nullable: true })
-    handshakeType: number;
 
     @Property({ nullable: true, columnType: "text" })
     description: string;
@@ -132,6 +126,12 @@ export class Pool {
     @Property({ nullable: true })
     underlyingAddress: string;
 
+    @Property({ type: "decimal", precision: 10, scale: 2, default: 1 })
+    poolTopupCR: number;
+
+    @Property({ nullable: true, default: 1 })
+    handshakeType: number;
+
     constructor(
         vaultAddress: string,
         fasset: string,
@@ -156,11 +156,9 @@ export class Pool {
         vaultCollateraloken: string,
         vaultCollateralTokenDecimals: number,
         publiclyAvailable: boolean,
-        poolTopupCR: number,
         mintingPoolCR: number,
         mintingVaultCR: number,
         vaultToken: string,
-        handshakeType: number,
         description: string,
         mintedUBA: string,
         mintedUSD: string,
@@ -197,11 +195,9 @@ export class Pool {
         this.vaultCollateralToken = vaultCollateraloken;
         this.vaultCollateralTokenDecimals = vaultCollateralTokenDecimals;
         this.publiclyAvailable = publiclyAvailable;
-        this.poolTopupCR = poolTopupCR;
         this.mintingPoolCR = mintingPoolCR;
         this.mintingVaultCR = mintingVaultCR;
         this.vaultToken = vaultToken;
-        this.handshakeType = handshakeType;
         this.description = description;
         this.mintedUBA = mintedUBA;
         this.mintedUSD = mintedUSD;

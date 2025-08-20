@@ -89,19 +89,6 @@
           "type": "uint256"
         }
       ],
-      "name": "setAnnouncedUnderlyingConfirmationMinSeconds",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
       "name": "setAttestationWindowSeconds",
       "outputs": [],
       "stateMutability": "nonpayable",
@@ -116,32 +103,6 @@
         }
       ],
       "name": "setAverageBlockTimeMS",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
-      "name": "setCancelCollateralReservationAfterSeconds",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
-      "name": "setCcbTimeSeconds",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -367,19 +328,6 @@
           "type": "uint256"
         }
       ],
-      "name": "setMinUnderlyingBackingBips",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
       "name": "setMinUpdateRepeatTimeSeconds",
       "outputs": [],
       "stateMutability": "nonpayable",
@@ -437,7 +385,7 @@
           "type": "uint256"
         }
       ],
-      "name": "setPoolExitAndTopupChangeTimelockSeconds",
+      "name": "setPoolExitCRChangeTimelockSeconds",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -459,16 +407,11 @@
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "_vaultFactor",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_poolFactor",
+          "name": "_value",
           "type": "uint256"
         }
       ],
-      "name": "setRedemptionDefaultFactorBips",
+      "name": "setRedemptionDefaultFactorVaultCollateralBIPS",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -482,63 +425,6 @@
         }
       ],
       "name": "setRedemptionFeeBips",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
-      "name": "setRejectOrCancelCollateralReservationReturnFactorBIPS",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
-      "name": "setRejectRedemptionRequestWindowSeconds",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_vaultF",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_poolF",
-          "type": "uint256"
-        }
-      ],
-      "name": "setRejectedRedemptionDefaultFactorBips",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
-      "name": "setTakeOverRedemptionRequestWindowSeconds",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -583,19 +469,6 @@
         }
       ],
       "name": "setVaultCollateralBuyForFlareFactorBIPS",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "_value",
-          "type": "address"
-        }
-      ],
-      "name": "setWhitelist",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

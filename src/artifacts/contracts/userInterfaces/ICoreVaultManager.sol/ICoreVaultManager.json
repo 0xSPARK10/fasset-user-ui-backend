@@ -4,6 +4,96 @@
   "sourceName": "contracts/userInterfaces/ICoreVaultManager.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "AmountZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ContractPaused",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DestinationNotAllowed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "EscrowAlreadyFinished",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "FeeZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InsufficientFunds",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidAddress",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidAmount",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidChain",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidEndTime",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidPreimageHash",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotAuthorized",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotCoreVault",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotFound",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyAssetManager",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PaymentFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PaymentNotProven",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "RequestExists",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -91,6 +181,25 @@
         }
       ],
       "name": "EmergencyPauseSenderRemoved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "preimageHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "EscrowExpired",
       "type": "event"
     },
     {
@@ -385,6 +494,19 @@
       ],
       "name": "UnusedPreimageHashRemoved",
       "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "assetManager",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
     },
     {
       "inputs": [],
@@ -994,7 +1116,13 @@
     {
       "inputs": [],
       "name": "triggerInstructions",
-      "outputs": [],
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "_numberOfInstructions",
+          "type": "uint256"
+        }
+      ],
       "stateMutability": "nonpayable",
       "type": "function"
     }

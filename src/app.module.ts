@@ -27,13 +27,9 @@ import { CacheModule } from "@nestjs/cache-manager";
 import { ExternalApiService } from "./services/external.api.service";
 import { RedemptionDefault } from "./entities/RedemptionDefault";
 import { IncompleteRedemption } from "./entities/RedemptionIncomplete";
-import { HandshakeEvent } from "./entities/Handshake";
 import { CollateralReservationEvent } from "./entities/CollateralReservation";
 import { SwaggerController } from "./controllers/swagger.controller";
-import { CrRejectedCancelledEvent } from "./entities/CollateralReservationRejected";
-import { RedemptionRejected } from "./entities/RedemptionRejected";
 import { RedemptionRequested } from "./entities/RedemptionRequested";
-import { RedemptionTakenOver } from "./entities/RedemptionTakenOver";
 import { RedemptionDefaultEvent } from "./entities/RedemptionDefaultEvent";
 import { UnderlyingPayment } from "./entities/UnderlyingPayment";
 import { IndexerState } from "./entities/IndexerState";
@@ -43,6 +39,8 @@ import { UtxoService } from "./services/utxo.service";
 import { HistoryService } from "./services/userHistory.service";
 import { EarnController } from "./controllers/earn.controller";
 import { EarnService } from "./services/earn.service";
+import { VersionController } from "./controllers/version.controller";
+import { VersionService } from "./services/version.service";
 
 @Module({
     imports: [
@@ -59,11 +57,7 @@ import { EarnService } from "./services/earn.service";
             RedemptionDefault,
             IncompleteRedemption,
             CollateralReservationEvent,
-            HandshakeEvent,
-            CrRejectedCancelledEvent,
-            RedemptionRejected,
             RedemptionRequested,
-            RedemptionTakenOver,
             RedemptionDefaultEvent,
             UnderlyingPayment,
             IndexerState,
@@ -78,7 +72,17 @@ import { EarnService } from "./services/earn.service";
         }),
         CacheModule.register({}),
     ],
-    controllers: [UserController, BalanceController, RedemptionController, MintController, PoolController, HealthController, SwaggerController, EarnController],
+    controllers: [
+        UserController,
+        BalanceController,
+        RedemptionController,
+        MintController,
+        PoolController,
+        HealthController,
+        SwaggerController,
+        EarnController,
+        VersionController,
+    ],
     providers: [
         MikroOrmHealthIndicator,
         UserService,
@@ -90,6 +94,7 @@ import { EarnService } from "./services/earn.service";
         UtxoService,
         HistoryService,
         EarnService,
+        VersionService,
     ],
     exports: [BotService, UserService, PoolService, UtxoService, HistoryService],
 })

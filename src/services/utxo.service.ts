@@ -3,7 +3,6 @@
 import { Injectable } from "@nestjs/common";
 import { UTXOSLedger } from "../interfaces/requestResponse";
 import { toBN, web3 } from "@flarelabs/fasset-bots-core/utils";
-import { BotService } from "./bot.init.service";
 import { LotsException } from "../exceptions/lots.exception";
 import { SelectedUTXO, SelectedUTXOAddress } from "src/interfaces/structure";
 import BN from "bn.js";
@@ -18,7 +17,6 @@ const MAX_SEQUENCE = 4294967295;
 export class UtxoService {
     envType: string;
     constructor(
-        private readonly botService: BotService,
         private readonly externalApiService: ExternalApiService,
         private readonly userService: UserService,
         private readonly configService: ConfigService

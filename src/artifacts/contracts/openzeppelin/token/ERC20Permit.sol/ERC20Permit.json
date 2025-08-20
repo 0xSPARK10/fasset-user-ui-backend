@@ -4,6 +4,16 @@
   "sourceName": "contracts/openzeppelin/token/ERC20Permit.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "ERC20PermitExpiredDeadline",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ERC20PermitInvalidSignature",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [],
       "name": "EIP712DomainChanged",

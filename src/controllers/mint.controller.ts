@@ -5,7 +5,6 @@ import {
     CRFee,
     CRStatus,
     FeeEstimate,
-    HandshakeEvent,
     EcosystemData,
     LotSize,
     MaxLots,
@@ -68,13 +67,13 @@ export class MintController {
     }
 
     @Get("getCrEvent/:fasset/:txhash")
-    @ApiExtraModels(CREvent, HandshakeEvent)
+    @ApiExtraModels(CREvent)
     @ApiResponse({
         schema: {
-            oneOf: [{ $ref: getSchemaPath(CREvent) }, { $ref: getSchemaPath(HandshakeEvent) }],
+            oneOf: [{ $ref: getSchemaPath(CREvent) }],
         },
     })
-    getEvents(@Param("fasset") fasset: string, @Param("txhash") txhash: string): Promise<CREvent | HandshakeEvent> {
+    getEvents(@Param("fasset") fasset: string, @Param("txhash") txhash: string): Promise<CREvent> {
         try {
             return this.userService.getCREventFromTxHash(fasset, txhash, false);
         } catch (error) {

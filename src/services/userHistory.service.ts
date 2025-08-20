@@ -141,9 +141,6 @@ export class HistoryService {
                         underlyingPaid: "0",
                         incomplete: incomplete,
                         remainingLots: incompleteData?.remainingLots ?? null,
-                        rejected: ticket.rejected,
-                        takenOver: ticket.takenOver,
-                        rejectionDefaulted: ticket.rejectionDefault,
                     };
                     userProgress.push(progress);
                 } else {
@@ -165,9 +162,6 @@ export class HistoryService {
                         underlyingPaid: amount,
                         incomplete: incomplete,
                         remainingLots: incompleteData?.remainingLots ?? null,
-                        rejected: ticket.rejected,
-                        takenOver: ticket.takenOver,
-                        rejectionDefaulted: ticket.rejectionDefault,
                     };
                     userProgress.push(progress);
                 }

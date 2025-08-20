@@ -1,0 +1,34 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IAddressUpdatable",
+  "sourceName": "contracts/flareSmartContracts/interfaces/IAddressUpdatable.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "AUAddressZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyAddressUpdater",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "getAddressUpdater",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

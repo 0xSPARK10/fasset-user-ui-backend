@@ -801,4 +801,44 @@ export class ExternalApiService {
             return 0;
         }
     }
+
+    async getCVratio(timestamps: string): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/timespan/tracked-underlying-backing-ratio?" + timestamps, {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV ratios`, error);
+            return { FXRP: [{ timestamp: Date.now(), value: 1.0123 }] };
+        }
+    }
+
+    async getCVBacking(): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/total-tracked-underlying-agent-backing?", {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return { FXRP: [{ value: "12345678912" }] };
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get CV ratios`, error);
+            return { FXRP: [{ value: "12345678912" }] };
+        }
+    }
 }

@@ -1,7 +1,10 @@
 import { toBNExp } from "@flarelabs/fasset-bots-core/utils";
+import { ProofOfReserve } from "src/interfaces/structure";
 
 export const EXECUTION_FEE = toBNExp(2.5, 18);
 export const STATE_CONNECTOR_ADDRESS = "0x0c13aDA1C7143Cf0a0795FFaB93eEBb6FAD6e4e3";
+
+export const PROOF_OF_RESERVE: ProofOfReserve = { total: "0", totalUSD: "0", reserve: "0", reserveUSD: "0", ratio: "0" };
 
 export enum RedemptionStatusEnum {
     EXPIRED = "EXPIRED",

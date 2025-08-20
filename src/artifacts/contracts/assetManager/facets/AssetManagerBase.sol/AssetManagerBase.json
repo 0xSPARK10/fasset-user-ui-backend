@@ -2,7 +2,28 @@
   "_format": "hh-sol-artifact-1",
   "contractName": "AssetManagerBase",
   "sourceName": "contracts/assetManager/facets/AssetManagerBase.sol",
-  "abi": [],
+  "abi": [
+    {
+      "inputs": [],
+      "name": "EmergencyPauseActive",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotAttached",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotWhitelisted",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyAssetManagerController",
+      "type": "error"
+    }
+  ],
   "bytecode": "0x",
   "deployedBytecode": "0x",
   "linkReferences": {},

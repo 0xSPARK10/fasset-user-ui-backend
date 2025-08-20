@@ -4,6 +4,116 @@
   "sourceName": "contracts/userInterfaces/ICollateralPool.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "AlreadyInitialized",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "AmountOfCollateralTooLow",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "AmountOfNatTooLow",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "CannotDestroyPoolWithIssuedTokens",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "CollateralAfterExitTooLow",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "CollateralRatioFallsBelowExitCR",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DepositResultsInZeroTokens",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "FAssetAllowanceTooSmall",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "FreeFAssetBalanceTooSmall",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRecipientAddress",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyAgent",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyAssetManager",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyInternalUse",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PaymentLargerThanFeeDebt",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PoolTokenAlreadySet",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "RedemptionRequiresClosingTooManyTickets",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SentAmountTooLow",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TokenBalanceTooLow",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TokenShareIsZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TokenSupplyAfterExitTooLow",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "WithdrawZeroFAsset",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ZeroFAssetDebtPayment",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -19,26 +129,7 @@
           "type": "uint8"
         }
       ],
-      "name": "ClaimedReward",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "donator",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "amountNatWei",
-          "type": "uint256"
-        }
-      ],
-      "name": "Donated",
+      "name": "CPClaimedReward",
       "type": "event"
     },
     {
@@ -65,23 +156,118 @@
         {
           "indexed": false,
           "internalType": "uint256",
-          "name": "addedFAssetFeesUBA",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "newFAssetFeeDebt",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
           "name": "timelockExpiresAt",
           "type": "uint256"
         }
       ],
-      "name": "Entered",
+      "name": "CPEntered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenHolder",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "burnedTokensWei",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "receivedNatWei",
+          "type": "uint256"
+        }
+      ],
+      "name": "CPExited",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenHolder",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "int256",
+          "name": "newFeeDebtUBA",
+          "type": "int256"
+        }
+      ],
+      "name": "CPFeeDebtChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenHolder",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "paidFeesUBA",
+          "type": "uint256"
+        }
+      ],
+      "name": "CPFeeDebtPaid",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenHolder",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "withdrawnFeesUBA",
+          "type": "uint256"
+        }
+      ],
+      "name": "CPFeesWithdrawn",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "paidNatWei",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "burnedTokensWei",
+          "type": "uint256"
+        }
+      ],
+      "name": "CPPaidOut",
       "type": "event"
     },
     {
@@ -108,67 +294,11 @@
         {
           "indexed": false,
           "internalType": "uint256",
-          "name": "receviedFAssetFeesUBA",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
           "name": "closedFAssetsUBA",
           "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "newFAssetFeeDebt",
-          "type": "uint256"
         }
       ],
-      "name": "Exited",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "burnedTokensWei",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "redeemedFAssetUBA",
-          "type": "uint256"
-        }
-      ],
-      "name": "IncompleteSelfCloseExit",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "recipient",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "paidNatWei",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "burnedTokensWei",
-          "type": "uint256"
-        }
-      ],
-      "name": "PaidOut",
+      "name": "CPSelfCloseExited",
       "type": "event"
     },
     {
@@ -290,18 +420,7 @@
       "type": "function"
     },
     {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_fAssets",
-          "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "_enterWithFullFassets",
-          "type": "bool"
-        }
-      ],
+      "inputs": [],
       "name": "enter",
       "outputs": [
         {
@@ -324,11 +443,6 @@
           "internalType": "uint256",
           "name": "_tokenShare",
           "type": "uint256"
-        },
-        {
-          "internalType": "enum ICollateralPool.TokenExitType",
-          "name": "_exitType",
-          "type": "uint8"
         }
       ],
       "name": "exit",
@@ -336,11 +450,6 @@
         {
           "internalType": "uint256",
           "name": "_natShare",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_fassetShare",
           "type": "uint256"
         }
       ],
@@ -371,11 +480,6 @@
           "internalType": "address payable",
           "name": "_recipient",
           "type": "address"
-        },
-        {
-          "internalType": "enum ICollateralPool.TokenExitType",
-          "name": "_exitType",
-          "type": "uint8"
         }
       ],
       "name": "exitTo",
@@ -383,11 +487,6 @@
         {
           "internalType": "uint256",
           "name": "_natShare",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_fassetShare",
           "type": "uint256"
         }
       ],
@@ -405,9 +504,9 @@
       "name": "fAssetFeeDebtOf",
       "outputs": [
         {
-          "internalType": "uint256",
+          "internalType": "int256",
           "name": "",
-          "type": "uint256"
+          "type": "int256"
         }
       ],
       "stateMutability": "view",
@@ -553,32 +652,6 @@
     },
     {
       "inputs": [],
-      "name": "topupCollateralRatioBIPS",
-      "outputs": [
-        {
-          "internalType": "uint32",
-          "name": "",
-          "type": "uint32"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "topupTokenPriceFactorBIPS",
-      "outputs": [
-        {
-          "internalType": "uint16",
-          "name": "",
-          "type": "uint16"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
       "name": "totalCollateral",
       "outputs": [
         {
@@ -595,9 +668,9 @@
       "name": "totalFAssetFeeDebt",
       "outputs": [
         {
-          "internalType": "uint256",
+          "internalType": "int256",
           "name": "",
-          "type": "uint256"
+          "type": "int256"
         }
       ],
       "stateMutability": "view",

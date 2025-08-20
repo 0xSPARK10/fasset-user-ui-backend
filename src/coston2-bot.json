@@ -45,16 +45,19 @@
             "mintingVaultCollateralRatio": "1.4",
             "mintingPoolCollateralRatio": "1.7",
             "poolExitCollateralRatio": "1.6",
-            "poolTopupCollateralRatio": "1.5",
-            "poolTopupTokenPriceFactor": "0.995",
             "buyFAssetByAgentFactor": "0.99",
-            "handshakeType": 0
+            "redemptionPoolFeeShare": "40%"
         },
         "fAssets": {
             "FTestXRP": {
                 "recommendedOwnerBalance": "50",
                 "minimumFreeUnderlyingBalance": "0.01",
-                "feeSafetyFactorPerKB": 0
+                "feeSafetyFactorPerKB": 0,
+                "transferToCVRatio": 0.7,
+                "returnFromCVRatio": 0.3,
+                "targetTransferToCVRatio": 0.4,
+                "targetReturnFromCVRatio": 0.6,
+                "useAutomaticCoreVaultTransferAndReturn": false
             }
         }
     },

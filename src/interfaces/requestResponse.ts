@@ -88,11 +88,6 @@ export class CREventExtended extends CREvent {
     from: string;
 }
 
-export class HandshakeEvent {
-    @ApiProperty({ example: "123456" })
-    collateralReservationId: string;
-}
-
 export class MintingStatus {
     @ApiProperty({ example: false })
     status: boolean;
@@ -135,16 +130,9 @@ export class RedemptionFee {
     maxLotsOneRedemption: number;
 }
 
-export class TrailingFee {
-    @ApiProperty({ example: "10" })
-    trailingFee: string;
-}
-
 export class ProtocolFees {
     @ApiProperty({ example: "10" })
     redemptionFee: string;
-    @ApiProperty({ example: "10" })
-    trailingFee: string;
 }
 
 export class RedemptionStatus {
@@ -154,12 +142,6 @@ export class RedemptionStatus {
     incomplete: boolean;
     @ApiProperty({ example: "redeemer: 0x0048508b510502555ED47E98dE98Dd6426dDd0C4, remainingLots: 30" })
     incompleteData: RedemptionIncomplete;
-    @ApiProperty({ example: true })
-    rejected?: boolean;
-    @ApiProperty({ example: true })
-    takenOver?: boolean;
-    @ApiProperty({ example: true })
-    rejectedDefaulted?: boolean;
 }
 
 export class RedemptionDefaultStatus {
@@ -242,8 +224,6 @@ export class AgentPoolCommon {
         example: "https://interactivechaos.com/sites/default/files/2023-02/super_mario.png",
     })
     url: string;
-    @ApiProperty({ example: 0 })
-    handshakeType: number;
 }
 
 export class AgentPoolItem extends AgentPoolCommon {
@@ -273,8 +253,6 @@ export class AgentPoolItem extends AgentPoolCommon {
     collateralToken: string;
     @ApiProperty({ example: "100.2" })
     transferableTokens?: string;
-    @ApiProperty({ example: "3.6" })
-    poolTopupCR: string;
     @ApiProperty({ example: "0xDF3Fc879BF162320dC46900Cf6ba698F26b13c1D" })
     tokenAddress: string;
     @ApiProperty({ example: "1.86645" })
@@ -381,8 +359,6 @@ export class BestAgent {
     maxLots: string;
     @ApiProperty({ example: "Forevernode" })
     agentName: string;
-    @ApiProperty({ example: true })
-    handshakeType: number;
     @ApiProperty({ example: "0x7b7204684854Da846E49dEFd1408b52c4e0E3ce8" })
     underlyingAddress: string;
     @ApiProperty({ example: "www.google.com" })
@@ -468,12 +444,6 @@ export class Progress {
     incomplete?: boolean;
     @ApiProperty({ example: "30" })
     remainingLots?: string;
-    @ApiProperty({ example: false })
-    rejected?: boolean;
-    @ApiProperty({ example: false })
-    takenOver?: boolean;
-    @ApiProperty({ example: false })
-    rejectionDefaulted?: boolean;
 }
 
 export class submitTxResponse {

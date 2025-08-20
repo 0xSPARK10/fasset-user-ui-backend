@@ -50,16 +50,16 @@ export class Redemption {
     @Property()
     fasset: string;
 
-    @Property()
+    @Property({ default: 1 })
     handshakeType: number;
 
-    @Property()
+    @Property({ default: false })
     rejected: boolean;
 
-    @Property()
+    @Property({ default: false })
     takenOver: boolean;
 
-    @Property()
+    @Property({ default: false })
     rejectionDefault: boolean;
 
     @Property({ nullable: true, type: "bigint" })
@@ -77,10 +77,6 @@ export class Redemption {
         requestId: string,
         validUntil: number,
         fasset: string,
-        handshakeType: number,
-        rejected: boolean,
-        takenOver: boolean,
-        rejectionDefault: boolean,
         timestamp: number
     ) {
         this.txhash = txhash;
@@ -98,10 +94,6 @@ export class Redemption {
         this.defaulted = false;
         this.validUntil = validUntil;
         this.fasset = fasset;
-        this.handshakeType = handshakeType;
-        this.rejected = rejected;
-        this.takenOver = takenOver;
-        this.rejectionDefault = rejectionDefault;
         this.timestamp = timestamp;
     }
 }

@@ -3,9 +3,7 @@ import { PostgreSqlDriver } from "@mikro-orm/postgresql";
 import { SqliteDriver } from "@mikro-orm/sqlite";
 import { Liveness } from "src/entities/AgentLiveness";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
-import { CrRejectedCancelledEvent } from "src/entities/CollateralReservationRejected";
 import { Collateral } from "src/entities/Collaterals";
-import { HandshakeEvent } from "src/entities/Handshake";
 import { IndexerState } from "src/entities/IndexerState";
 import { Minting } from "src/entities/Minting";
 import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
@@ -14,9 +12,7 @@ import { Redemption } from "src/entities/Redemption";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
 import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
 import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
-import { RedemptionRejected } from "src/entities/RedemptionRejected";
 import { RedemptionRequested } from "src/entities/RedemptionRequested";
-import { RedemptionTakenOver } from "src/entities/RedemptionTakenOver";
 import { FullRedemption } from "src/entities/RedemptionWhole";
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { logger } from "src/logger/winston.logger";
@@ -36,11 +32,7 @@ if (process.env.DB_TYPE === "sqlite") {
             RedemptionDefault,
             IncompleteRedemption,
             CollateralReservationEvent,
-            HandshakeEvent,
-            CrRejectedCancelledEvent,
-            RedemptionRejected,
             RedemptionRequested,
-            RedemptionTakenOver,
             RedemptionDefaultEvent,
             UnderlyingPayment,
             IndexerState,
@@ -63,11 +55,7 @@ if (process.env.DB_TYPE === "sqlite") {
             RedemptionDefault,
             IncompleteRedemption,
             CollateralReservationEvent,
-            HandshakeEvent,
-            CrRejectedCancelledEvent,
-            RedemptionRejected,
             RedemptionRequested,
-            RedemptionTakenOver,
             RedemptionDefaultEvent,
             UnderlyingPayment,
             IndexerState,

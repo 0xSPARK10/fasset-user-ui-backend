@@ -4,6 +4,41 @@
   "sourceName": "contracts/governance/implementation/GovernedProxyImplementation.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "AlreadyInProductionMode",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "GovernedAddressZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "GovernedAlreadyInitialized",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyExecutor",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyGovernance",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TimelockInvalidSelector",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TimelockNotAllowedYet",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -130,24 +165,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IGovernanceSettings",
-          "name": "_governanceSettings",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "_initialGovernance",
-          "type": "address"
-        }
-      ],
-      "name": "initialise",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {

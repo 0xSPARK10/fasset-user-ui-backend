@@ -47,7 +47,7 @@
                       "type": "bytes32"
                     }
                   ],
-                  "internalType": "struct BalanceDecreasingTransaction.RequestBody",
+                  "internalType": "struct IBalanceDecreasingTransaction.RequestBody",
                   "name": "requestBody",
                   "type": "tuple"
                 },
@@ -79,17 +79,17 @@
                       "type": "bytes32"
                     }
                   ],
-                  "internalType": "struct BalanceDecreasingTransaction.ResponseBody",
+                  "internalType": "struct IBalanceDecreasingTransaction.ResponseBody",
                   "name": "responseBody",
                   "type": "tuple"
                 }
               ],
-              "internalType": "struct BalanceDecreasingTransaction.Response",
+              "internalType": "struct IBalanceDecreasingTransaction.Response",
               "name": "data",
               "type": "tuple"
             }
           ],
-          "internalType": "struct BalanceDecreasingTransaction.Proof",
+          "internalType": "struct IBalanceDecreasingTransaction.Proof",
           "name": "_payment1",
           "type": "tuple"
         },
@@ -135,7 +135,7 @@
                       "type": "bytes32"
                     }
                   ],
-                  "internalType": "struct BalanceDecreasingTransaction.RequestBody",
+                  "internalType": "struct IBalanceDecreasingTransaction.RequestBody",
                   "name": "requestBody",
                   "type": "tuple"
                 },
@@ -167,17 +167,17 @@
                       "type": "bytes32"
                     }
                   ],
-                  "internalType": "struct BalanceDecreasingTransaction.ResponseBody",
+                  "internalType": "struct IBalanceDecreasingTransaction.ResponseBody",
                   "name": "responseBody",
                   "type": "tuple"
                 }
               ],
-              "internalType": "struct BalanceDecreasingTransaction.Response",
+              "internalType": "struct IBalanceDecreasingTransaction.Response",
               "name": "data",
               "type": "tuple"
             }
           ],
-          "internalType": "struct BalanceDecreasingTransaction.Proof",
+          "internalType": "struct IBalanceDecreasingTransaction.Proof",
           "name": "_payment2",
           "type": "tuple"
         },
@@ -307,7 +307,7 @@
                       "type": "bytes32"
                     }
                   ],
-                  "internalType": "struct BalanceDecreasingTransaction.RequestBody",
+                  "internalType": "struct IBalanceDecreasingTransaction.RequestBody",
                   "name": "requestBody",
                   "type": "tuple"
                 },
@@ -339,17 +339,17 @@
                       "type": "bytes32"
                     }
                   ],
-                  "internalType": "struct BalanceDecreasingTransaction.ResponseBody",
+                  "internalType": "struct IBalanceDecreasingTransaction.ResponseBody",
                   "name": "responseBody",
                   "type": "tuple"
                 }
               ],
-              "internalType": "struct BalanceDecreasingTransaction.Response",
+              "internalType": "struct IBalanceDecreasingTransaction.Response",
               "name": "data",
               "type": "tuple"
             }
           ],
-          "internalType": "struct BalanceDecreasingTransaction.Proof[]",
+          "internalType": "struct IBalanceDecreasingTransaction.Proof[]",
           "name": "_payments",
           "type": "tuple[]"
         },
@@ -479,7 +479,7 @@
                       "type": "bytes32"
                     }
                   ],
-                  "internalType": "struct BalanceDecreasingTransaction.RequestBody",
+                  "internalType": "struct IBalanceDecreasingTransaction.RequestBody",
                   "name": "requestBody",
                   "type": "tuple"
                 },
@@ -511,17 +511,17 @@
                       "type": "bytes32"
                     }
                   ],
-                  "internalType": "struct BalanceDecreasingTransaction.ResponseBody",
+                  "internalType": "struct IBalanceDecreasingTransaction.ResponseBody",
                   "name": "responseBody",
                   "type": "tuple"
                 }
               ],
-              "internalType": "struct BalanceDecreasingTransaction.Response",
+              "internalType": "struct IBalanceDecreasingTransaction.Response",
               "name": "data",
               "type": "tuple"
             }
           ],
-          "internalType": "struct BalanceDecreasingTransaction.Proof",
+          "internalType": "struct IBalanceDecreasingTransaction.Proof",
           "name": "_transaction",
           "type": "tuple"
         },

@@ -1,0 +1,46 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "AgentUpdates",
+  "sourceName": "contracts/assetManager/library/AgentUpdates.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "CollateralDeprecated",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "CollateralRatioTooSmall",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "FeeTooHigh",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "IncreaseTooBig",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotEnoughCollateral",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ValueTooHigh",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ValueTooLow",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212205ee1e85de188317b72d3abd1db05b6db826ebaa3126b3e0d4ee6d64c6c049faa64736f6c634300081b0033",
+  "deployedBytecode": "0x73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212205ee1e85de188317b72d3abd1db05b6db826ebaa3126b3e0d4ee6d64c6c049faa64736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

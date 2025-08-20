@@ -48,13 +48,13 @@ export class Minting {
     timestamp: number;
 
     @Property()
-    handshakeRequired: boolean;
-
-    @Property()
     vaultAddress: string;
 
     @Property({ nullable: true, type: "text" })
     paymentReference?: string;
+
+    @Property({ default: false })
+    handshakeRequired: boolean;
 
     constructor(
         collateralReservationId: string,
@@ -68,7 +68,6 @@ export class Minting {
         userAddress: string,
         amount: string,
         timestamp: number,
-        handshakeRequired: boolean,
         vaultAddress: string,
         paymentReference: string
     ) {
@@ -86,7 +85,6 @@ export class Minting {
         this.userAddress = userAddress;
         this.amount = amount;
         this.timestamp = timestamp;
-        this.handshakeRequired = handshakeRequired;
         this.vaultAddress = vaultAddress;
         this.paymentReference = paymentReference;
     }

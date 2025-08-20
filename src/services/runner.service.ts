@@ -3,29 +3,26 @@
 import { Minting } from "../entities/Minting";
 import { Redemption } from "../entities/Redemption";
 import { EntityManager, MikroORM } from "@mikro-orm/core";
-import { requiredEventArgs } from "node_modules/@flarelabs/fasset-bots-core/dist/src/utils/events/truffle";
-import { latestBlockTimestamp, requireNotNull, sumBN, toBN, web3, web3DeepNormalize } from "@flarelabs/fasset-bots-core/utils";
+import { requiredEventArgs } from "@flarelabs/fasset-bots-core";
+import { errorIncluded, latestBlockTimestamp, requireNotNull, sumBN, toBN, web3, web3DeepNormalize } from "@flarelabs/fasset-bots-core/utils";
 import { AssetManagerSettings, ChainId, UserBotCommands } from "@flarelabs/fasset-bots-core";
 import { BotService } from "./bot.init.service";
-import { attestationProved } from "node_modules/@flarelabs/fasset-bots-core/dist/src/underlying-chain/AttestationHelper";
+import { attestationProved } from "@flarelabs/fasset-bots-core";
 import { Liveness } from "../entities/AgentLiveness";
-import { dateStringToTimestamp, formatBNToDisplayDecimals, sleep, timestampToDateString } from "src/utils/utils";
+import { dateStringToTimestamp, formatBNToDisplayDecimals, timestampToDateString } from "src/utils/utils";
 import { Injectable, OnApplicationBootstrap } from "@nestjs/common";
 import { RedeemData, RedemptionDefaultEvent } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
-import { TX_BLOCKED, TX_FAILED, TX_SUCCESS, TxInputOutput } from "node_modules/@flarelabs/fasset-bots-core/dist/src/underlying-chain/interfaces/IBlockChain";
-import { BTC_MDU } from "node_modules/@flarelabs/fasset-bots-core/dist/src/underlying-chain/BlockchainIndexerHelper";
+import { TX_BLOCKED, TX_FAILED, TX_SUCCESS, TxInputOutput } from "@flarelabs/fasset-bots-core";
+import { BTC_MDU } from "@flarelabs/fasset-bots-core";
 import BN from "bn.js";
 import { Pool } from "src/entities/Pool";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
-import { RedemptionRejected } from "src/entities/RedemptionRejected";
-import { RedemptionTakenOver } from "src/entities/RedemptionTakenOver";
-import { RedemptionRequested } from "src/entities/RedemptionRequested";
-import { AttestationNotProved } from "node_modules/@flarelabs/fasset-bots-core/dist/src/underlying-chain/interfaces/IFlareDataConnectorClient";
+import { AttestationNotProved } from "@flarelabs/fasset-bots-core";
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
-import { ITransaction } from "node_modules/@flarelabs/fasset-bots-core/src/underlying-chain/interfaces/IBlockChain";
+import { ITransaction } from "@flarelabs/fasset-bots-core";
 
 enum RedemptionStatus {
     EXPIRED = "EXPIRED",
@@ -103,13 +100,6 @@ export class RunnerService implements OnApplicationBootstrap {
         const res = await this.userBotMap
             .get(fasset)
             .context.assetManager.redemptionPaymentDefault(web3DeepNormalize(proof), requestId, { from: this.userBotMap.get(fasset).nativeAddress });
-        return requiredEventArgs(res, "RedemptionDefault");
-    }
-
-    private async executeRejectedRedemptionPaymentDefault(fasset: string, requestId: string) {
-        const res = await this.userBotMap
-            .get(fasset)
-            .context.assetManager.rejectedRedemptionPaymentDefault(requestId, { from: this.userBotMap.get(fasset).nativeAddress });
         return requiredEventArgs(res, "RedemptionDefault");
     }
 
@@ -291,15 +281,15 @@ export class RunnerService implements OnApplicationBootstrap {
                                 await this.em.persistAndFlush(minting);
                             } catch (error) {
                                 logger.error(`Error in processMintings (executeMinting):`, error);
-                                if (error.message.includes("invalid crt id")) {
+                                if (errorIncluded(error, ["InvalidCrtId"])) {
                                     minting.processed = true;
                                     await this.em.persistAndFlush(minting);
                                 }
-                                if (error.message.includes("invalid minting reference")) {
+                                if (errorIncluded(error, ["InvalidMintingReference"])) {
                                     minting.processed = true;
                                     await this.em.persistAndFlush(minting);
                                 }
-                                if (error.message.includes("minting payment too old")) {
+                                if (errorIncluded(error, ["MintingPaymentTooOld"])) {
                                     minting.processed = true;
                                     await this.em.persistAndFlush(minting);
                                 }
@@ -346,89 +336,6 @@ export class RunnerService implements OnApplicationBootstrap {
                     redemption.processed = true;
                     await this.em.persistAndFlush(redemption);
                     continue;
-                }
-                if (redemption.handshakeType != 0 && (redemption.takenOver == false || redemption.amountUBA != "0")) {
-                    try {
-                        if (
-                            redemption.rejected == false &&
-                            Number(redemption.timestamp) + (Number(settings.rejectRedemptionRequestWindowSeconds) + 10) * 1000 > Date.now()
-                        ) {
-                            const redemptionRejected = await this.em.findOne(RedemptionRejected, { requestId: redemption.requestId });
-                            if (redemptionRejected === null) {
-                                continue;
-                            }
-                            if (redemption.rejected == false) {
-                                redemption.rejected = true;
-                                await this.em.persistAndFlush(redemption);
-                            }
-                        }
-                        if (redemption.rejected == true && (redemption.takenOver == false || redemption.amountUBA != "0")) {
-                            const redemptionTakenOver = await this.em.findOne(RedemptionTakenOver, { requestId: redemption.requestId });
-                            if (redemptionTakenOver === null || redemption.amountUBA != "0") {
-                                const redemptionRejected = await this.em.findOne(RedemptionRejected, { requestId: redemption.requestId });
-                                if (Number(redemptionRejected.timestamp) + Number(settings.takeOverRedemptionRequestWindowSeconds) * 1000 < Date.now()) {
-                                    // Runner can call default
-                                    const res = await this.executeRejectedRedemptionPaymentDefault(fasset, redemption.requestId);
-                                    const event: RedemptionDefaultEvent = {
-                                        agentVault: res.agentVault,
-                                        redeemer: res.redeemer,
-                                        requestId: toBN(res.requestId).toString(),
-                                        redemptionAmountUBA: toBN(res.redemptionAmountUBA).toString(),
-                                        redeemedVaultCollateralWei: toBN(res.redeemedVaultCollateralWei).toString(),
-                                        redeemedPoolCollateralWei: toBN(res.redeemedPoolCollateralWei).toString(),
-                                    };
-                                    await this.saveRedemptionDefaultEvent(event, fasset, redemption);
-                                    redemption.processed = true;
-                                    redemption.defaulted = true;
-                                    redemption.rejectionDefault = true;
-                                    await this.em.persistAndFlush(redemption);
-                                    continue;
-                                }
-                            }
-                            //TODO update the request if takeover destroyed this request or update it
-                            if (redemptionTakenOver != null && redemption.takenOver == false) {
-                                redemption.takenOver = true;
-                                const closedAmount = Number(redemption.amountUBA) - Number(redemptionTakenOver.valueTakenOverUBA);
-                                const newRequest = await this.em.findOne(RedemptionRequested, { requestId: redemptionTakenOver.newRequestId });
-                                const newAmountUBA = toBN(newRequest.valueUBA).sub(toBN(newRequest.feeUBA));
-                                const newTakenOverRed = new Redemption(
-                                    redemption.txhash,
-                                    false,
-                                    redemption.underlyingAddress,
-                                    newRequest.paymentReference,
-                                    newAmountUBA.toString(),
-                                    newRequest.firstUnderlyingBlock,
-                                    newRequest.lastUnderlyingBlock,
-                                    newRequest.lastUnderlyingTimestamp,
-                                    newRequest.requestId,
-                                    redemption.validUntil,
-                                    redemption.fasset,
-                                    0,
-                                    false,
-                                    false,
-                                    false,
-                                    Date.now()
-                                );
-                                await this.em.persistAndFlush(newTakenOverRed);
-                                if (closedAmount <= 0) {
-                                    redemption.amountUBA = "0";
-                                    redemption.processed = true;
-                                    redemption.state = true;
-                                    await this.em.persistAndFlush(redemption);
-                                    continue;
-                                } else {
-                                    redemption.amountUBA = Math.floor(closedAmount).toString();
-                                    await this.em.persistAndFlush(redemption);
-                                    continue;
-                                }
-                            } else {
-                                continue;
-                            }
-                        }
-                    } catch (error) {
-                        logger.error(`Error in processRedemptions handshake req:`, error);
-                        continue;
-                    }
                 }
                 if (redemption.defaulted == false && redemption.processed == false) {
                     try {
@@ -573,11 +480,11 @@ export class RunnerService implements OnApplicationBootstrap {
                                 redemption.processed = true;
                                 await this.em.persistAndFlush(redemption);
                             } catch (error) {
-                                if (error.message.includes("invalid redemption status")) {
+                                if (errorIncluded(error, ["InvalidRedemptionStatus"])) {
                                     redemption.processed = true;
                                     await this.em.persistAndFlush(redemption);
                                 }
-                                if (error.message.includes("invalid request id")) {
+                                if (errorIncluded(error, ["InvalidRequestId"])) {
                                     redemption.processed = true;
                                     await this.em.persistAndFlush(redemption);
                                 }

@@ -82,6 +82,11 @@ export interface TimeSeries {
     value: string;
 }
 
+export interface TimeSpan {
+    timestamp: number;
+    value: number;
+}
+
 export interface TimeSeriesIndexer {
     index: string;
     start: number;
@@ -121,6 +126,7 @@ export interface TimeData {
     totalCollateralDiff: string;
     isPositiveCollateralDiff: boolean;
     coreVaultData: TimeDataCV;
+    proofOfReserve: TimeSeries[];
 }
 
 export interface TimeDataCV {
@@ -139,6 +145,14 @@ export interface PoolRewards {
     fasset: string;
     rewards: string;
     rewardsUSD: string;
+}
+
+export interface ProofOfReserve {
+    total: string;
+    totalUSD: string;
+    reserve: string;
+    reserveUSD: string;
+    ratio: string;
 }
 
 export interface EcosystemData {
@@ -166,6 +180,7 @@ export interface EcosystemData {
     coreVaultInflowsUSD: string;
     coreVaultOutflows: string;
     coreVaultOutflowsUSD: string;
+    proofOfReserve: ProofOfReserve;
 }
 
 export interface AssetManagerFasset {

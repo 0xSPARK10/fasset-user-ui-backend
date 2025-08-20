@@ -1,6 +1,6 @@
 import { BNish, toBN } from "@flarelabs/fasset-bots-core/utils";
 import BN from "bn.js";
-import { AMG_TOKENWEI_PRICE_SCALE, AMGSettings } from "node_modules/@flarelabs/fasset-bots-core/dist/src/fasset/Conversions";
+import { AMG_TOKENWEI_PRICE_SCALE, AMGSettings } from "@flarelabs/fasset-bots-core";
 
 export async function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

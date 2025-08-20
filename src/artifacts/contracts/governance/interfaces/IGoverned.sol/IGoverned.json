@@ -4,6 +4,41 @@
   "sourceName": "contracts/governance/interfaces/IGoverned.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "AlreadyInProductionMode",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "GovernedAddressZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "GovernedAlreadyInitialized",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyExecutor",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyGovernance",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TimelockInvalidSelector",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TimelockNotAllowedYet",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {

@@ -4,6 +4,31 @@
   "sourceName": "contracts/fassetToken/implementation/CheckPointable.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "CheckPointHistoryReadingFromCleanedupBlock",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "CheckPointableReadingFromCleanedupBlock",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "CleanupBlockMustBeInThePast",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "CleanupBlockNumberMustNeverDecrease",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyCleanerContract",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {

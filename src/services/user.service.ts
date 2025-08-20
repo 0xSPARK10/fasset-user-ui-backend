@@ -3,8 +3,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
     AddressResponse,
-    AgentPoolItem,
-    AgentPoolLatest,
     AssetPrice,
     AvailableFassets,
     BestAgent,
@@ -17,7 +15,6 @@ import {
     ExecutorResponse,
     FassetStatus,
     FeeEstimate,
-    HandshakeEvent,
     IndexerTokenBalances,
     LotSize,
     MaxCPTWithdraw,
@@ -25,9 +22,7 @@ import {
     MaxWithdraw,
     MintingStatus,
     NativeBalanceItem,
-    Progress,
     ProtocolFees,
-    RedemptionDefaultStatus,
     RedemptionDefaultStatusGrouped,
     RedemptionFee,
     RedemptionFeeData,
@@ -36,28 +31,10 @@ import {
     RequestMint,
     RequestRedemption,
     submitTxResponse,
-    TrailingFee,
-    UTXOSLedger,
     VaultCollateralRedemption,
 } from "../interfaces/requestResponse";
-import { AssetManagerSettings, ChainId, CollateralClass, UserBotCommands } from "@flarelabs/fasset-bots-core";
-import {
-    BN_ZERO,
-    DEFAULT_RETRIES,
-    MAX_BIPS,
-    artifacts,
-    formatFixed,
-    latestBlockTimestamp,
-    prefix0x,
-    requireNotNull,
-    retry,
-    sumBN,
-    toBN,
-    toBNExp,
-    web3,
-    web3DeepNormalize,
-} from "@flarelabs/fasset-bots-core/utils";
-import { requiredEventArgs } from "node_modules/@flarelabs/fasset-bots-core/dist/src/utils/events/truffle";
+import { AssetManagerSettings, ChainId, CollateralClass, TokenPriceReader, UserBotCommands } from "@flarelabs/fasset-bots-core";
+import { BN_ZERO, MAX_BIPS, artifacts, formatFixed, latestBlockTimestamp, requireNotNull, sumBN, toBN, toBNExp, web3 } from "@flarelabs/fasset-bots-core/utils";
 import { BotService } from "./bot.init.service";
 import { EntityManager } from "@mikro-orm/core";
 import { Minting } from "../entities/Minting";
@@ -65,9 +42,7 @@ import { Redemption } from "../entities/Redemption";
 import { LotsException } from "../exceptions/lots.exception";
 import { error } from "console";
 import { Pool } from "../entities/Pool";
-import { Liveness } from "../entities/AgentLiveness";
-import { CollateralPrice } from "node_modules/@flarelabs/fasset-bots-core/dist/src/state/CollateralPrice";
-import { TokenPriceReader } from "node_modules/@flarelabs/fasset-bots-core/dist/src/state/TokenPrice";
+import { CollateralPrice } from "@flarelabs/fasset-bots-core";
 import { dateStringToTimestamp, formatBNToDisplayDecimals, sleep, timestampToDateString } from "src/utils/utils";
 import { EXECUTION_FEE, NETWORK_SYMBOLS, RedemptionStatusEnum } from "src/utils/constants";
 import {
@@ -77,8 +52,6 @@ import {
     RedeemData,
     RedemptionData,
     RedemptionIncomplete,
-    SelectedUTXO,
-    SelectedUTXOAddress,
     TimeData,
     TransactionBTC,
     UTXOBTC,
@@ -88,40 +61,24 @@ import { logger } from "src/logger/winston.logger";
 import { FullRedemption } from "src/entities/RedemptionWhole";
 import { Collateral } from "src/entities/Collaterals";
 import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
-import {
-    ITransaction,
-    TX_BLOCKED,
-    TX_FAILED,
-    TX_SUCCESS,
-    TxInputOutput,
-} from "node_modules/@flarelabs/fasset-bots-core/dist/src/underlying-chain/interfaces/IBlockChain";
-import { BTC_MDU, BlockChainIndexerHelperError } from "node_modules/@flarelabs/fasset-bots-core/dist/src/underlying-chain/BlockchainIndexerHelper";
+import { TX_BLOCKED, TX_FAILED, TX_SUCCESS, TxInputOutput } from "@flarelabs/fasset-bots-core";
+import { BTC_MDU } from "@flarelabs/fasset-bots-core";
 import { ExternalApiService } from "./external.api.service";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
-import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
-import { CrRejectedCancelledEvent } from "src/entities/CollateralReservationRejected";
-import { RedemptionRejected } from "src/entities/RedemptionRejected";
 import { ConfigService } from "@nestjs/config";
 import { lastValueFrom } from "rxjs";
 import { HttpService } from "@nestjs/axios";
 import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
-import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
-import { RedemptionRequested } from "src/entities/RedemptionRequested";
 
 const IERC20 = artifacts.require("IERC20Metadata");
 const CollateralPool = artifacts.require("CollateralPool");
-const CollateraPoolToken = artifacts.require("CollateralPoolToken");
-
-const REMAIN_SATOSHIS = toBN(0);
 const NUM_RETRIES = 3;
-const MAX_SEQUENCE = 4294967295;
 
 const sigCollateralReserved = web3.utils.keccak256(
     "CollateralReserved(address,address,uint256,uint256,uint256,uint256,uint256,uint256,string,bytes32,address,uint256)"
 );
-const sigHandshake = web3.utils.keccak256("HandshakeRequired(address,address,uint256,string[],uint256,uint256)");
 
 @Injectable()
 export class UserService {
@@ -166,7 +123,6 @@ export class UserService {
             collateralReservationFee: collateralReservationFee.toString(),
             maxLots: maxLots.maxLots,
             agentName: agentName,
-            handshakeType: Number(agentInfo.handshakeType),
             underlyingAddress: agentInfo.underlyingAddressString,
             infoUrl: pool.infoUrl,
         };
@@ -262,14 +218,7 @@ export class UserService {
     async getProtocolFees(fasset: string): Promise<ProtocolFees> {
         const bot = this.botService.getInfoBot(fasset);
         const settings = await bot.context.assetManager.getSettings();
-        const trailingFee = toBN(await bot.context.assetManager.transferFeeMillionths());
-        return { redemptionFee: settings.redemptionFeeBIPS.toString(), trailingFee: trailingFee.toString() };
-    }
-
-    async getTrailingFees(fasset: string): Promise<TrailingFee> {
-        const bot = this.botService.getInfoBot(fasset);
-        const trailingFee = toBN(await bot.context.assetManager.transferFeeMillionths());
-        return { trailingFee: trailingFee.toString() };
+        return { redemptionFee: settings.redemptionFeeBIPS.toString() };
     }
 
     async getAssetManagerAddress(fasset: string): Promise<AddressResponse> {
@@ -292,21 +241,6 @@ export class UserService {
         };
     }
 
-    private async getXRPTransaction(fasset: string, txHash: string) {
-        const bot = this.botService.getUserBot(fasset);
-        const transaction = await bot.context.blockchainIndexer.getTransaction(txHash);
-        if (transaction != null) return transaction;
-        let currentBlockHeight = await bot.context.blockchainIndexer.getLastFinalizedBlockNumber();
-        const waitBlocks = 6 + currentBlockHeight;
-        while (currentBlockHeight < waitBlocks) {
-            await sleep(1000);
-            const transaction = await bot.context.blockchainIndexer.getTransaction(txHash);
-            if (transaction != null) return transaction;
-            currentBlockHeight = await bot.context.blockchainIndexer.getLastFinalizedBlockNumber();
-        }
-        return null;
-    }
-
     async requestMinting(requestMint: RequestMint): Promise<void> {
         const count = await this.em.count(Minting, { txhash: requestMint.txhash });
         if (count != 0) {
@@ -320,61 +254,6 @@ export class UserService {
         const now = new Date();
         const underlyingPayment = new UnderlyingPayment(crEvent.paymentReference, requestMint.txhash, now.getTime());
         await this.em.persistAndFlush(underlyingPayment);
-
-        /*if (count != 0) {
-            throw new LotsException("Minting with this txhash already exists.");
-        }
-        if (requestMint.fasset.includes("XRP")) {
-            const tx = await this.getXRPTransaction(requestMint.fasset, requestMint.txhash);
-            if (tx == null) {
-                logger.error(`Error in requestMinting - no tx ${requestMint.fasset} and ${requestMint.txhash}`);
-                throw error;
-            }
-        }
-        const vault = await this.em.findOne(Pool, { vaultAddress: requestMint.vaultAddress });
-        const now = new Date();
-        const timestamp = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        const validUntil = timestamp.getTime();
-        const hShake = vault.handshakeType == null ? 0 : Number(vault.handshakeType);
-        // TODO if rejected based on type save minting as processed but for history
-        let crEvent;
-        let paymentAmount;
-        if (hShake != 0) {
-            crEvent = await this.em.findOne(CollateralReservationEvent, { collateralReservationId: requestMint.collateralReservationId });
-            paymentAmount = crEvent.valueUBA;
-        } else {
-            crEvent = (await this.getCREventFromTxHash(requestMint.fasset, requestMint.nativeHash, true)) as CREventExtended;
-            paymentAmount = crEvent.paymentAmount;
-        }
-        if (
-            hShake == 0 &&
-            (!(crEvent.from.toLocaleLowerCase() === requestMint.userAddress.toLocaleLowerCase()) ||
-                !(crEvent.collateralReservationId === requestMint.collateralReservationId))
-        ) {
-            logger.error(`Error in requestMinting - userAddress or crID do not match`);
-            throw error;
-        }
-        const bot = this.botService.getUserBot(requestMint.fasset);
-        const settings = await bot.context.assetManager.getSettings();
-        const amount = formatBNToDisplayDecimals(toBN(paymentAmount), requestMint.fasset.includes("XRP") ? 2 : 8, Number(settings.assetDecimals));
-        const handshakeReq = hShake == 0 ? false : true;
-        const minting = new Minting(
-            requestMint.collateralReservationId,
-            requestMint.txhash,
-            requestMint.paymentAddress,
-            requestMint.userUnderlyingAddress,
-            false,
-            validUntil,
-            false,
-            requestMint.fasset,
-            requestMint.userAddress,
-            amount,
-            now.getTime(),
-            handshakeReq,
-            requestMint.vaultAddress,
-            crEvent.paymentReference
-        );
-        await this.em.persistAndFlush(minting);*/
     }
 
     async mintingStatus(txhash: string): Promise<MintingStatus> {
@@ -418,48 +297,7 @@ export class UserService {
 
     async requestRedemption(fasset: string, txhash: string, amount: string, userAddress: string): Promise<RequestRedemption> {
         const fullRedeemData = await this.getRedemptionRequestedEvents(fasset, txhash);
-        //const redemptions = fullRedeemData.redeemData;
-        /*const now = new Date();
-        const count = await this.em.count(FullRedemption, { txhash: txhash });
-        if (count != 0) {
-            throw new LotsException("Redemption with this txhash already exists.");
-        }
-        const timestamp = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        const validUntil = timestamp.getTime();*/
-        /*for (const redemptionEvent of redemptions) {
-            const agent = await this.em.findOne(Pool, {
-                vaultAddress: redemptionEvent.agentVault,
-            });
-            const redemption = new Redemption(
-                txhash,
-                false,
-                redemptionEvent.underlyingAddress,
-                redemptionEvent.paymentReference,
-                redemptionEvent.amountUBA,
-                redemptionEvent.firstUnderlyingBlock,
-                redemptionEvent.lastUnderlyingBlock,
-                redemptionEvent.lastUnderlyingTimestamp,
-                redemptionEvent.requestId,
-                validUntil,
-                fasset,
-                agent.handshakeType == null ? 0 : Number(agent.handshakeType),
-                false,
-                false,
-                false,
-                now.getTime()
-            );
-            await this.em.persistAndFlush(redemption);
-        }*/
-        //const fullRedemption = new FullRedemption(txhash, false, fasset, fullRedeemData.from, fullRedeemData.fullAmount, now.getTime());
-        //await this.em.persistAndFlush(fullRedemption);
         if (fullRedeemData.incomplete == true) {
-            /*const incompleteRedemption = new IncompleteRedemption(
-                txhash,
-                fullRedeemData.dataIncomplete.redeemer,
-                fullRedeemData.dataIncomplete.remainingLots,
-                now.getTime()
-            );*/
-            //await this.em.persistAndFlush(incompleteRedemption);
             return { incomplete: fullRedeemData.incomplete, remainingLots: fullRedeemData.dataIncomplete.remainingLots };
         }
         return { incomplete: fullRedeemData.incomplete };
@@ -861,19 +699,7 @@ export class UserService {
 
     //TODO: add getting rejection/cancel event from DB first and if present return false before reading CREvent from DB
     async getCrStatus(crId: string): Promise<CRStatus | null> {
-        const [crRejected, crEvent] = await Promise.all([
-            this.em.findOne(CrRejectedCancelledEvent, { collateralReservationId: crId }),
-            this.em.findOne(CollateralReservationEvent, { collateralReservationId: crId }),
-        ]);
-        if (crEvent == null && crRejected == null) {
-            return { status: false };
-        }
-        if (crRejected != null) {
-            return {
-                status: true,
-                accepted: false,
-            };
-        }
+        const [crEvent] = await Promise.all([this.em.findOne(CollateralReservationEvent, { collateralReservationId: crId })]);
         if (crEvent == null) {
             return { status: false };
         }
@@ -889,7 +715,7 @@ export class UserService {
     }
 
     // Gets collateral reservation event or identity verification required event from txhash
-    async getCREventFromTxHash(fasset: string, txhash: string, local: boolean): Promise<CREvent | CREventExtended | HandshakeEvent> {
+    async getCREventFromTxHash(fasset: string, txhash: string, local: boolean): Promise<CREvent | CREventExtended> {
         const bot = this.botService.getUserBot(fasset);
         try {
             let receipt = await web3.eth.getTransactionReceipt(txhash);
@@ -904,44 +730,31 @@ export class UserService {
                 }
             }
             const inputsCollateralReserved = bot.context.assetManager.abi.find((item) => item.name === "CollateralReserved");
-            const inputsHandshake = bot.context.assetManager.abi.find((item) => item.name === "HandshakeRequired");
-            //const sigCollateralReserved = "0x7e28eb3b9a2077a4fa0559357b1647ec5eabf18d7adf1539c4e8fb1445a5fc09";
-            //const sigHandshake = "0x5ed9d178ee4866ba21f1ed094f3ff1f16f635e25a3fb180d2989a5a579df73a9";
             for (const log of receipt.logs) {
                 try {
                     let inputs;
                     if (log.topics[0] === sigCollateralReserved) {
                         inputs = inputsCollateralReserved.inputs;
-                    } else if (log.topics[0] === sigHandshake) {
-                        inputs = inputsHandshake.inputs;
                     } else {
                         return;
                     }
                     const decodedLog = web3.eth.abi.decodeLog(inputs, log.data, log.topics.slice(1));
                     const paymentAmount = toBN(decodedLog.feeUBA).add(toBN(decodedLog.valueUBA));
-                    if (log.topics[0] === sigCollateralReserved) {
-                        if (!local) {
-                            return {
-                                collateralReservationId: decodedLog.collateralReservationId,
-                                paymentAmount: paymentAmount.toString(),
-                                paymentAddress: decodedLog.paymentAddress,
-                                paymentReference: decodedLog.paymentReference,
-                            } as CREvent;
-                        } else {
-                            return {
-                                collateralReservationId: decodedLog.collateralReservationId,
-                                paymentAmount: decodedLog.valueUBA,
-                                paymentAddress: decodedLog.paymentAddress,
-                                paymentReference: decodedLog.paymentReference,
-                                from: receipt.from,
-                            } as CREventExtended;
-                        }
+                    if (!local) {
+                        return {
+                            collateralReservationId: decodedLog.collateralReservationId,
+                            paymentAmount: paymentAmount.toString(),
+                            paymentAddress: decodedLog.paymentAddress,
+                            paymentReference: decodedLog.paymentReference,
+                        } as CREvent;
                     } else {
-                        if (log.topics[0] === sigHandshake) {
-                            return {
-                                collateralReservationId: decodedLog.collateralReservationId,
-                            } as HandshakeEvent;
-                        }
+                        return {
+                            collateralReservationId: decodedLog.collateralReservationId,
+                            paymentAmount: decodedLog.valueUBA,
+                            paymentAddress: decodedLog.paymentAddress,
+                            paymentReference: decodedLog.paymentReference,
+                            from: receipt.from,
+                        } as CREventExtended;
                     }
                 } catch (error) {
                     logger.error(`Error in getCREventFromTxHash (abi):`, error);
@@ -1161,9 +974,6 @@ export class UserService {
         const bot = this.botService.getUserBot(fasset);
         const fullRedeemData = await this.getRedemptionRequestedEvents(fasset, txhash);
         const takenOverRed = await this.em.find(Redemption, { txhash: txhash });
-        let takenOver = false;
-        let rejected = false;
-        let rejectedDefaulted = false;
         let success = false;
         for (let i = 0; i < takenOverRed.length; i++) {
             if (takenOverRed[i].amountUBA === "0") {
@@ -1181,15 +991,6 @@ export class UserService {
                 createdAt: (takenOverRed[i].timestamp / 1000).toString(),
                 underlyingAddress: takenOverRed[i].underlyingAddress,
             };
-            if (takenOverRed[i].takenOver) {
-                takenOver = true;
-            }
-            if (takenOverRed[i].rejected) {
-                rejected = true;
-            }
-            if (takenOverRed[i].rejectionDefault) {
-                rejectedDefaulted = true;
-            }
             const status = await this.redemptionStatus(bot, redemption, await latestBlockTimestamp(), await bot.context.assetManager.getSettings());
             switch (status) {
                 case RedemptionStatusEnum.PENDING:
@@ -1207,9 +1008,6 @@ export class UserService {
             status: success ? RedemptionStatusEnum.SUCCESS : RedemptionStatusEnum.PENDING,
             incomplete: fullRedeemData.incomplete,
             incompleteData: fullRedeemData.dataIncomplete,
-            rejected: rejected,
-            takenOver: takenOver,
-            rejectedDefaulted: rejectedDefaulted,
         };
     }
 
