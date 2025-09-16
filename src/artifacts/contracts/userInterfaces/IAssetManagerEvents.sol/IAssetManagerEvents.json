@@ -473,31 +473,6 @@
       "inputs": [
         {
           "indexed": false,
-          "internalType": "uint8",
-          "name": "collateralClass",
-          "type": "uint8"
-        },
-        {
-          "indexed": false,
-          "internalType": "address",
-          "name": "collateralToken",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "validUntil",
-          "type": "uint256"
-        }
-      ],
-      "name": "CollateralTypeDeprecated",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
           "internalType": "string",
           "name": "name",
           "type": "string"
@@ -609,6 +584,12 @@
     {
       "anonymous": false,
       "inputs": [
+        {
+          "indexed": false,
+          "internalType": "enum EmergencyPause.Level",
+          "name": "level",
+          "type": "uint8"
+        },
         {
           "indexed": false,
           "internalType": "uint256",
@@ -1243,6 +1224,25 @@
         }
       ],
       "name": "RedemptionTicketUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "firstTicketId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "nextTicketId",
+          "type": "uint256"
+        }
+      ],
+      "name": "RedemptionTicketsConsolidated",
       "type": "event"
     },
     {

@@ -89,6 +89,10 @@ export function formatTimeSeriesPercentage(data: TimeSeriesIndexer[]): TimeSerie
 
 export function formatTimeSpanRatio(data: TimeSpan[]): TimeSeries[] {
     const timeSeries: TimeSeries[] = [];
+    if (!data) {
+        timeSeries.push({ timestamp: 1757064665, value: "100" });
+        return timeSeries;
+    }
     for (let i = 0; i < data.length; i++) {
         timeSeries.push({
             timestamp: Math.floor(data[i].timestamp),

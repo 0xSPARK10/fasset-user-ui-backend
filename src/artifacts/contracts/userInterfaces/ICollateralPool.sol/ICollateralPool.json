@@ -40,6 +40,11 @@
     },
     {
       "inputs": [],
+      "name": "EmergencyPauseActive",
+      "type": "error"
+    },
+    {
+      "inputs": [],
       "name": "FAssetAllowanceTooSmall",
       "type": "error"
     },

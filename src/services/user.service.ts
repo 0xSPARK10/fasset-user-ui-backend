@@ -188,13 +188,9 @@ export class UserService {
     async checkStateFassets(): Promise<any> {
         const stateF = [];
         for (const f of this.botService.fassetList) {
-            if (f.includes("DOGE")) {
-                continue;
-            }
             const bot = this.botService.getInfoBot(f);
             const state = await bot.context.assetManager.emergencyPaused();
-            const stateTransfer = await bot.context.assetManager.transfersEmergencyPaused();
-            stateF.push({ fasset: f, state: state || stateTransfer });
+            stateF.push({ fasset: f, state: state });
         }
         return stateF;
     }
@@ -657,9 +653,6 @@ export class UserService {
         //FBTC and other fassets
         const fassets = this.listAvailableFassets();
         for (const fasset of fassets.fassets) {
-            if (fasset.includes("DOGE")) {
-                continue;
-            }
             const fBot = this.botService.getUserBot(fasset);
             const settingsAsset = await fBot.context.assetManager.getSettings();
             const redemptionFee = settings.redemptionFeeBIPS;
@@ -692,7 +685,7 @@ export class UserService {
             const token = await IERC20.at(collateralEntity.token);
             const balance = await token.balanceOf(address);
             const decimals = (await token.decimals()).toNumber();
-            collaterals.push({ symbol: c, balance: formatBNToDisplayDecimals(toBN(balance), 3, decimals) });
+            collaterals.push({ symbol: c == "USDT" ? "USDT0" : c, balance: formatBNToDisplayDecimals(toBN(balance), 3, decimals) });
         }
         return collaterals;
     }
@@ -1306,11 +1299,9 @@ export class UserService {
     async getMintingEnabled(): Promise<FassetStatus[]> {
         const fassetStatus: FassetStatus[] = [];
         for (const f of this.botService.fassetList) {
-            if (f.includes("DOGE")) {
-                continue;
-            }
             const bot = this.botService.getInfoBot(f);
-            fassetStatus.push({ fasset: f, status: !(await bot.context.assetManager.mintingPaused()) });
+            const pause = await bot.context.assetManager.emergencyPaused();
+            fassetStatus.push({ fasset: f, status: !pause });
         }
         return fassetStatus;
     }

@@ -1,10 +1,15 @@
 import { toBNExp } from "@flarelabs/fasset-bots-core/utils";
-import { ProofOfReserve } from "src/interfaces/structure";
+import { ProofOfReserve, SupplyTotalCollateral } from "src/interfaces/structure";
 
 export const EXECUTION_FEE = toBNExp(2.5, 18);
 export const STATE_CONNECTOR_ADDRESS = "0x0c13aDA1C7143Cf0a0795FFaB93eEBb6FAD6e4e3";
 
 export const PROOF_OF_RESERVE: ProofOfReserve = { total: "0", totalUSD: "0", reserve: "0", reserveUSD: "0", ratio: "0" };
+
+export const EMPTY_SUPPLY_BY_COLLATERAL: SupplyTotalCollateral[] = [
+    { symbol: "FLR", supply: "0", supplyUSD: "0" },
+    { symbol: "USDT", supply: "0", supplyUSD: "0" },
+];
 
 export enum RedemptionStatusEnum {
     EXPIRED = "EXPIRED",
@@ -51,3 +56,5 @@ export type SecretsFile = {
     database?: DatabaseAccount;
     pricePublisher?: ChainAccount;
 };
+
+export const TEN_MINUTES = 10 * 60 * 1000;

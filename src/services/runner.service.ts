@@ -23,6 +23,7 @@ import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
 import { ITransaction } from "@flarelabs/fasset-bots-core";
+import { TEN_MINUTES } from "src/utils/constants";
 
 enum RedemptionStatus {
     EXPIRED = "EXPIRED",
@@ -52,17 +53,21 @@ export class RunnerService implements OnApplicationBootstrap {
 
     async startProcessing() {
         logger.info(`Starting runner.service`);
+        let lastRun = 0;
         while (true) {
             try {
+                const now = Date.now();
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 for (const [fasset, userBot] of this.userBotMap) {
-                    if (fasset.includes("DOGE")) {
-                        continue;
-                    }
                     //TODO: make this in parallel for each fasset (when mysql will be used)
                     await this.processMintings(fasset);
                     await this.processRedemptions(fasset);
                     //await this.pingAgents(fasset);//TODO: fix: Error in start processing:  TransactionFailedError: Returned error: unknown account
+                    //TODO: FIX this if multiple fassets.
+                    if (now - lastRun >= TEN_MINUTES) {
+                        await this.withdrawWNAT(fasset);
+                        lastRun = now;
+                    }
                 }
             } catch (error) {
                 logger.error(`Starting runner.service run into error`, error);
@@ -101,6 +106,13 @@ export class RunnerService implements OnApplicationBootstrap {
             .get(fasset)
             .context.assetManager.redemptionPaymentDefault(web3DeepNormalize(proof), requestId, { from: this.userBotMap.get(fasset).nativeAddress });
         return requiredEventArgs(res, "RedemptionDefault");
+    }
+
+    private async withdrawWNAT(fasset: string) {
+        const balance = await this.userBotMap.get(fasset).context.wNat.balanceOf(this.userBotMap.get(fasset).nativeAddress);
+        if (toBN(balance).gtn(0)) {
+            await this.userBotMap.get(fasset).context.wNat.withdraw(balance, { from: this.userBotMap.get(fasset).nativeAddress });
+        }
     }
 
     private async getXRPTransaction(fasset: string, txHash: string) {

@@ -135,7 +135,7 @@ export class HistoryService {
                         defaulted: ticket.defaulted,
                         txhash: ticket.txhash,
                         ticketID: ticket.requestId,
-                        vaultToken: redDefEvent.collateralToken,
+                        vaultToken: redDefEvent.collateralToken == "USDT" ? "USDT0" : redDefEvent.collateralToken,
                         vaultTokenValueRedeemed: vaultCollateralRedeemed,
                         poolTokenValueRedeemed: poolCollateralRedeemed,
                         underlyingPaid: "0",

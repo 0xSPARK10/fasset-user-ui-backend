@@ -12,7 +12,7 @@ import { ConfigService } from "@nestjs/config";
 import { BlockNumber, Log } from "web3-core";
 import { Liveness } from "../entities/AgentLiveness";
 import { readFileSync } from "fs";
-import { NETWORK_SYMBOLS, PROOF_OF_RESERVE } from "src/utils/constants";
+import { EMPTY_SUPPLY_BY_COLLATERAL, NETWORK_SYMBOLS, PROOF_OF_RESERVE } from "src/utils/constants";
 import {
     CurrencyMap,
     EcosystemData,
@@ -344,9 +344,6 @@ export class BotService implements OnModuleInit {
             const supply = await this.externalApiService.getFassetSupplyDiff(dayTimestamp.toString(), now.toString());
             if (isEmptyObject(supply)) {
                 for (const f of this.fassetList) {
-                    if (f.includes("DOGE")) {
-                        continue;
-                    }
                     diffs.push({ fasset: f, diff: "0.0", isPositive: true });
                 }
             } else {
@@ -502,7 +499,7 @@ export class BotService implements OnModuleInit {
                     for (const e of allEvents) {
                         const event = e as any;
                         const am = this.assetManagerList.find((am) => am.assetManager === event.address);
-                        if (!am || am.fasset.includes("DOGE")) {
+                        if (!am) {
                             continue;
                         }
                         if (event.event === "AgentPingResponse") {
@@ -1364,9 +1361,6 @@ export class BotService implements OnModuleInit {
                     logger.error(`Error in getPools (update):`, error);
                 }
             }
-            if (fasset.includes("DOGE")) {
-                continue;
-            }
             const faSupply = await this.botMap.get(fasset).context.fAsset.totalSupply();
             const mintedLots = toBN(faSupply).div(lotSizeUBA);
             supplyFa.mintedLots = toBN(mintedLots).toNumber();
@@ -1401,7 +1395,16 @@ export class BotService implements OnModuleInit {
             } else {
                 supplyFa.allLots = supplyFa.availableToMintLots + supplyFa.mintedLots;
             }
-            const existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+            let existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+            if (!existingPriceAsset) {
+                const priceAsset = await priceReader.getPrice(this.fassetSymbol.get(fasset), false, settings.maxTrustedPriceAgeSeconds);
+                prices.push({
+                    symbol: this.fassetSymbol.get(fasset),
+                    price: priceAsset.price,
+                    decimals: Number(priceAsset.decimals),
+                });
+                existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+            }
             const faSupplyUSD = toBN(faSupply).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
             supplyFa.minted = formatFixed(faSupplyUSD, Number(settings.assetDecimals), {
                 decimals: 3,
@@ -1529,7 +1532,7 @@ export class BotService implements OnModuleInit {
                     groupDigits: true,
                     groupSeparator: ",",
                 });
-                const ratio = totalReserve.mul(toBNExp(1, 10)).div(faSupply).mul(toBN(100));
+                const ratio = faSupply.eqn(0) ? toBNExp(1, 10) : totalReserve.mul(toBNExp(1, 10)).div(faSupply).mul(toBN(100));
                 let ratioCalc = Number(ratio.toString()) / 1e10;
                 if (ratioCalc < 100) {
                     ratioCalc = 100;
@@ -1582,11 +1585,19 @@ export class BotService implements OnModuleInit {
         if (Number(numOfMints) != 0 || Number(this.numMints) == 0) {
             this.numMints = numOfMints;
         }
+        if (supplyCollateral.length == 0) {
+            supplyCollateral.push(...EMPTY_SUPPLY_BY_COLLATERAL);
+        }
+        for (const c of supplyCollateral) {
+            if (c.symbol == "USDT") {
+                c.symbol = "USDT0";
+            }
+        }
         this.ecosystemTVL = currentTVL;
         this.mintedAll = mintedAll;
         this.fassetCirculatingSupply = supplyFasset;
         this.agentsInLiquidation = agentsLiq;
-        this.numAgents = await this.em.count(Pool, { fasset: this.envType == "dev" ? "FTestXRP" : "FXRP" });
+        this.numAgents = await this.em.count(Liveness, { fasset: this.envType == "dev" ? "FTestXRP" : "FXRP", publiclyAvailable: true });
         //this.numberOfLiquidations = numLiq;
         this.rewardsAvailableUSD = rewardsAvailableUSD;
         this.overCollaterized = calculateOvercollateralizationPercentage(totalCollateral, this.mintedAll);

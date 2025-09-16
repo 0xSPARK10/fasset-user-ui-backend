@@ -564,31 +564,6 @@
       "inputs": [
         {
           "indexed": false,
-          "internalType": "uint8",
-          "name": "collateralClass",
-          "type": "uint8"
-        },
-        {
-          "indexed": false,
-          "internalType": "address",
-          "name": "collateralToken",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "validUntil",
-          "type": "uint256"
-        }
-      ],
-      "name": "CollateralTypeDeprecated",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
           "internalType": "string",
           "name": "name",
           "type": "string"
@@ -779,6 +754,12 @@
     {
       "anonymous": false,
       "inputs": [
+        {
+          "indexed": false,
+          "internalType": "enum EmergencyPause.Level",
+          "name": "level",
+          "type": "uint8"
+        },
         {
           "indexed": false,
           "internalType": "uint256",
@@ -1464,6 +1445,25 @@
         }
       ],
       "name": "RedemptionTicketUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "firstTicketId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "nextTicketId",
+          "type": "uint256"
+        }
+      ],
+      "name": "RedemptionTicketsConsolidated",
       "type": "event"
     },
     {
@@ -3055,6 +3055,19 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_firstTicketId",
+          "type": "uint256"
+        }
+      ],
+      "name": "consolidateSmallTickets",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "controllerAttached",
       "outputs": [
@@ -3258,29 +3271,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "enum CollateralType.Class",
-          "name": "_collateralClass",
-          "type": "uint8"
-        },
-        {
-          "internalType": "contract IERC20",
-          "name": "_token",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_invalidationTimeSec",
-          "type": "uint256"
-        }
-      ],
-      "name": "deprecateCollateralType",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -3533,6 +3523,11 @@
     {
       "inputs": [
         {
+          "internalType": "enum EmergencyPause.Level",
+          "name": "_level",
+          "type": "uint8"
+        },
+        {
           "internalType": "bool",
           "name": "_byGovernance",
           "type": "bool"
@@ -3553,6 +3548,11 @@
       "name": "emergencyPauseDetails",
       "outputs": [
         {
+          "internalType": "enum EmergencyPause.Level",
+          "name": "_level",
+          "type": "uint8"
+        },
+        {
           "internalType": "uint256",
           "name": "_pausedUntil",
           "type": "uint256"
@@ -3572,41 +3572,13 @@
       "type": "function"
     },
     {
-      "inputs": [
-        {
-          "internalType": "bool",
-          "name": "_byGovernance",
-          "type": "bool"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_duration",
-          "type": "uint256"
-        }
-      ],
-      "name": "emergencyPauseTransfers",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
       "inputs": [],
-      "name": "emergencyPauseTransfersDetails",
+      "name": "emergencyPauseLevel",
       "outputs": [
         {
-          "internalType": "uint256",
-          "name": "_pausedUntil",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_totalPauseDuration",
-          "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "_pausedByGovernance",
-          "type": "bool"
+          "internalType": "enum EmergencyPause.Level",
+          "name": "",
+          "type": "uint8"
         }
       ],
       "stateMutability": "view",
@@ -5107,7 +5079,7 @@
             },
             {
               "internalType": "uint64",
-              "name": "tokenInvalidationTimeMinSeconds",
+              "name": "__tokenInvalidationTimeMinSeconds",
               "type": "uint64"
             },
             {
@@ -6312,20 +6284,6 @@
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "resetEmergencyPauseTotalDuration",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "resetEmergencyPauseTransfersTotalDuration",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
       "inputs": [
         {
           "internalType": "address",
@@ -7071,19 +7029,6 @@
           "type": "uint256"
         }
       ],
-      "name": "setTokenInvalidationTimeMinSeconds",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
       "name": "setVaultCollateralBuyForFlareFactorBIPS",
       "outputs": [],
       "stateMutability": "nonpayable",
@@ -7155,24 +7100,6 @@
           "type": "address"
         },
         {
-          "internalType": "contract IERC20",
-          "name": "_token",
-          "type": "address"
-        }
-      ],
-      "name": "switchVaultCollateral",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "_agentVault",
-          "type": "address"
-        },
-        {
           "internalType": "uint256",
           "name": "_amountUBA",
           "type": "uint256"
@@ -7181,32 +7108,6 @@
       "name": "transferToCoreVault",
       "outputs": [],
       "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "transfersEmergencyPaused",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "transfersEmergencyPausedUntil",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
       "type": "function"
     },
     {

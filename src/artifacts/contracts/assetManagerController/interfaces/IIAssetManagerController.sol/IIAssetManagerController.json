@@ -283,6 +283,19 @@
     {
       "inputs": [
         {
+          "internalType": "contract IIAssetManager[]",
+          "name": "_assetManagers",
+          "type": "address[]"
+        }
+      ],
+      "name": "cancelEmergencyPause",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "bytes",
           "name": "_encodedCall",
           "type": "bytes"
@@ -301,22 +314,12 @@
           "type": "address[]"
         },
         {
-          "internalType": "enum CollateralType.Class",
-          "name": "_class",
-          "type": "uint8"
-        },
-        {
-          "internalType": "contract IERC20",
-          "name": "_token",
-          "type": "address"
-        },
-        {
           "internalType": "uint256",
-          "name": "_invalidationTimeSec",
+          "name": "_duration",
           "type": "uint256"
         }
       ],
-      "name": "deprecateCollateralType",
+      "name": "emergencyPauseFull",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -334,7 +337,7 @@
           "type": "uint256"
         }
       ],
-      "name": "emergencyPause",
+      "name": "emergencyPauseFullAndTransfer",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -352,7 +355,7 @@
           "type": "uint256"
         }
       ],
-      "name": "emergencyPauseTransfers",
+      "name": "emergencyPauseStartOperations",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -504,19 +507,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IIAssetManager[]",
-          "name": "_assetManagers",
-          "type": "address[]"
-        }
-      ],
-      "name": "resetEmergencyPauseTotalDuration",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -1175,24 +1165,6 @@
         }
       ],
       "name": "setTimeForPayment",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "contract IIAssetManager[]",
-          "name": "_assetManagers",
-          "type": "address[]"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
-      "name": "setTokenInvalidationTimeMinSeconds",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

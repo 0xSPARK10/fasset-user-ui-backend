@@ -455,19 +455,6 @@
           "type": "uint256"
         }
       ],
-      "name": "setTokenInvalidationTimeMinSeconds",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "_value",
-          "type": "uint256"
-        }
-      ],
       "name": "setVaultCollateralBuyForFlareFactorBIPS",
       "outputs": [],
       "stateMutability": "nonpayable",

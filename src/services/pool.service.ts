@@ -133,7 +133,7 @@ export class PoolService {
                             const vaultCollateral = vaultCollaterals[0];
                             const poolCollateral = poolCollaterals[0];
                             if (!info) {
-                                if (agent.status >= 2 || agent.fasset.includes("DOGE")) {
+                                if (agent.status >= 2) {
                                     continue;
                                 }
                                 const agentPool = {
@@ -160,7 +160,7 @@ export class PoolService {
                                     url: agent.url,
                                     poolCollateralUSD: agent.poolNatUsd,
                                     vaultCollateral: agent.vaultCollateral,
-                                    collateralToken: agent.vaultCollateralToken,
+                                    collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
                                     transferableTokens: "0",
                                     tokenAddress: agent.tokenAddress,
                                     fassetDebt: "0",
@@ -200,9 +200,6 @@ export class PoolService {
                             const balanceFormated = formatBNToDisplayDecimals(balance, 3, 18);
                             const fees = toBN(await pool.fAssetFeesOf(address));
                             if ((balance.eqn(0) || balanceFormated == "0") && fees.eqn(0)) {
-                                if (agent.fasset.includes("DOGE")) {
-                                    continue;
-                                }
                                 const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress);
                                 let lifetimeClaimedPool = "0";
                                 if (Object.keys(claimedPools).length != 0) {
@@ -251,7 +248,7 @@ export class PoolService {
                                     url: agent.url,
                                     poolCollateralUSD: agent.poolNatUsd,
                                     vaultCollateral: agent.vaultCollateral,
-                                    collateralToken: agent.vaultCollateralToken,
+                                    collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
                                     //transferableTokens: formatFixed(transferableTokens, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
                                     transferableTokens: "0",
                                     tokenAddress: agent.tokenAddress,
@@ -363,7 +360,7 @@ export class PoolService {
                                 url: agent.url,
                                 poolCollateralUSD: agent.poolNatUsd,
                                 vaultCollateral: agent.vaultCollateral,
-                                collateralToken: agent.vaultCollateralToken,
+                                collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
                                 //transferableTokens: formatFixed(transferableTokens, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
                                 transferableTokens: formatBNToDisplayDecimals(transferableTokens, 3, 18),
                                 tokenAddress: agent.tokenAddress,
@@ -393,7 +390,7 @@ export class PoolService {
                                 infoUrl: agent.infoUrl,
                                 lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
                                 lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
-                                userPoolTokensFull: balance.toString(),
+                                userPoolTokensFull: nonTimeLocked.toString(),
                             };
                             pools.push(agentPool);
                         } catch (error) {
@@ -410,12 +407,12 @@ export class PoolService {
                 const end = Date.now();
                 return pools;
             } catch (error) {
-                logger.error(`Error in getPools, attempt ${i + 1} of ${NUM_RETRIES}: `, error);
+                logger.warn(`Warning in getPools, attempt ${i + 1} of ${NUM_RETRIES}: `, error);
                 if (i < NUM_RETRIES - 1) {
                     await new Promise((resolve) => setTimeout(resolve, 2000));
                 } else {
                     if (error.message.includes("undefined")) {
-                        logger.warn("Error in getPools: ", error);
+                        logger.warn("Warning in getPools: ", error);
                     } else {
                         logger.error("Error in getPools: ", error);
                     }
@@ -474,7 +471,7 @@ export class PoolService {
                             url: agent.url,
                             poolCollateralUSD: agent.poolNatUsd,
                             vaultCollateral: agent.vaultCollateral,
-                            collateralToken: agent.vaultCollateralToken,
+                            collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
                             transferableTokens: "0",
                             tokenAddress: agent.tokenAddress,
                             fassetDebt: "0",
@@ -588,7 +585,7 @@ export class PoolService {
                         url: agent.url,
                         poolCollateralUSD: agent.poolNatUsd,
                         vaultCollateral: agent.vaultCollateral,
-                        collateralToken: agent.vaultCollateralToken,
+                        collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
                         transferableTokens: formatBNToDisplayDecimals(transferableTokens, 3, 18),
                         tokenAddress: agent.tokenAddress,
                         //fassetDebt: formatBNToDisplayDecimals(fassetDebt, Number(settings.assetDecimals), Number(settings.assetDecimals)), Uncomment if sending cpt enabled in FE
@@ -617,7 +614,7 @@ export class PoolService {
                         infoUrl: agent.infoUrl,
                         lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
                         lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
-                        userPoolTokensFull: balance.toString(),
+                        userPoolTokensFull: nonTimeLocked.toString(),
                     };
                     pools.push(agentPool);
                 } catch (error) {
@@ -679,7 +676,7 @@ export class PoolService {
                             url: agent.url,
                             poolCollateralUSD: agent.poolNatUsd,
                             vaultCollateral: agent.vaultCollateral,
-                            collateralToken: agent.vaultCollateralToken,
+                            collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
                             mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
                             mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
                             vaultCCBCR: Number(1).toFixed(2),
@@ -750,7 +747,7 @@ export class PoolService {
                 url: agent.url,
                 poolCollateralUSD: agent.poolNatUsd,
                 vaultCollateral: agent.vaultCollateral,
-                collateralToken: agent.vaultCollateralToken,
+                collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
                 mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
                 mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
                 vaultCCBCR: Number(1).toFixed(2),

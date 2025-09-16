@@ -529,31 +529,6 @@
       "inputs": [
         {
           "indexed": false,
-          "internalType": "uint8",
-          "name": "collateralClass",
-          "type": "uint8"
-        },
-        {
-          "indexed": false,
-          "internalType": "address",
-          "name": "collateralToken",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "validUntil",
-          "type": "uint256"
-        }
-      ],
-      "name": "CollateralTypeDeprecated",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
           "internalType": "string",
           "name": "name",
           "type": "string"
@@ -702,6 +677,12 @@
     {
       "anonymous": false,
       "inputs": [
+        {
+          "indexed": false,
+          "internalType": "enum EmergencyPause.Level",
+          "name": "level",
+          "type": "uint8"
+        },
         {
           "indexed": false,
           "internalType": "uint256",
@@ -1336,6 +1317,25 @@
         }
       ],
       "name": "RedemptionTicketUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "firstTicketId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "nextTicketId",
+          "type": "uint256"
+        }
+      ],
+      "name": "RedemptionTicketsConsolidated",
       "type": "event"
     },
     {
@@ -2779,6 +2779,19 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_firstTicketId",
+          "type": "uint256"
+        }
+      ],
+      "name": "consolidateSmallTickets",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "controllerAttached",
       "outputs": [
@@ -3189,6 +3202,19 @@
       "name": "doublePaymentChallenge",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "emergencyPauseLevel",
+      "outputs": [
+        {
+          "internalType": "enum EmergencyPause.Level",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -4641,7 +4667,7 @@
             },
             {
               "internalType": "uint64",
-              "name": "tokenInvalidationTimeMinSeconds",
+              "name": "__tokenInvalidationTimeMinSeconds",
               "type": "uint64"
             },
             {
@@ -5918,24 +5944,6 @@
           "type": "address"
         },
         {
-          "internalType": "contract IERC20",
-          "name": "_token",
-          "type": "address"
-        }
-      ],
-      "name": "switchVaultCollateral",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "_agentVault",
-          "type": "address"
-        },
-        {
           "internalType": "uint256",
           "name": "_amountUBA",
           "type": "uint256"
@@ -5944,32 +5952,6 @@
       "name": "transferToCoreVault",
       "outputs": [],
       "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "transfersEmergencyPaused",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "transfersEmergencyPausedUntil",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
       "type": "function"
     },
     {
