@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-        - ${COMPOSE_PROJECT_NAME}_postgres_data:/var/lib/postgresql/data
+        - postgres_data:/var/lib/postgresql/data
 
   # Application Service
   app:
@@ -30,4 +30,4 @@ services:
     command: "/bin/sh -c '(yarn build) && (yarn run start)'"
 
 volumes:
-  ${COMPOSE_PROJECT_NAME}_postgres_data:
+  postgres_data:
