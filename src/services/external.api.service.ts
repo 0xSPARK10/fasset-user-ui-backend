@@ -458,7 +458,7 @@ export class ExternalApiService {
 
     async getTotalClaimedPoolFees(): Promise<any> {
         if (this.apiUrl == undefined) {
-            return 0;
+            return { FXRP: { value: "3369000" } };
         }
         try {
             const data = await lastValueFrom(
@@ -467,12 +467,12 @@ export class ExternalApiService {
                 })
             );
             if (data.data.status == 500) {
-                return 0;
+                return { FXRP: { value: "3369000" } };
             }
             return data.data.data;
         } catch (error) {
             logger.error(`Error in get total claimed pool fees`, error);
-            return 0;
+            return { FXRP: { value: "3369000" } };
         }
     }
 
@@ -839,6 +839,26 @@ export class ExternalApiService {
         } catch (error) {
             logger.error(`Error in get CV ratios`, error);
             return { FXRP: [{ value: "12345678912" }] };
+        }
+    }
+
+    async getTotalPoolFees(): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return { FXRP: { value: "3369000" } };
+        }
+        try {
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/total-deposited-pool-fees?", {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return { FXRP: { value: "3369000" } };
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get total deposited pool fees`, error);
+            return { FXRP: { value: "3369000" } };
         }
     }
 }

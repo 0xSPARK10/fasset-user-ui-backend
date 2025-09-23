@@ -446,7 +446,7 @@ export class PoolService {
                     const vaultCollateral = vaultCollaterals[0];
                     const poolCollateral = poolCollaterals[0];
                     const fees = toBN(await pool.fAssetFeesOf(address));
-                    if (balance.eq(BN_ZERO)) {
+                    if (balance.eq(BN_ZERO) && fees.eqn(0)) {
                         const agentPool = {
                             vault: agent.vaultAddress,
                             pool: agent.poolAddress,

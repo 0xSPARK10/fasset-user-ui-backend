@@ -709,7 +709,7 @@ export class BotService implements OnModuleInit {
         let tvlpoolsnat = "0";
         let numMints = 0;
         let agentPoolCollateralOnly = "0";
-        const poolRewardsPaid = (await this.externalApiService.getTotalClaimedPoolFees()) as CurrencyMap;
+        const poolRewardsPaid = (await this.externalApiService.getTotalPoolFees()) as CurrencyMap;
         const poolPaid: PoolRewards[] = [];
         let totalPoolPaidUSD = "0";
         const holdersFasset = await this.externalApiService.getHolderCount();
