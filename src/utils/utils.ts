@@ -100,3 +100,9 @@ export function calculateOvercollateralizationPercentage(collateral: string, min
     // Return the result formatted as a string with two decimal places
     return overcollateralizationPercentage.toFixed(2);
 }
+
+export function toBNDecimal(value, decimals = 10) {
+    const [whole, fraction = "0"] = value.toString().split(".");
+    const fractionPadded = fraction.padEnd(decimals, "0").slice(0, decimals);
+    return new BN(whole + fractionPadded);
+}

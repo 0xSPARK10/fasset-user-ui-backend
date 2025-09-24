@@ -31,7 +31,7 @@ import {
 import { logger } from "src/logger/winston.logger";
 import { AxiosRequestConfig } from "axios";
 import { Collateral } from "src/entities/Collaterals";
-import { calculateOvercollateralizationPercentage, formatBNToDisplayDecimals, sumUsdStrings } from "src/utils/utils";
+import { calculateOvercollateralizationPercentage, formatBNToDisplayDecimals, sumUsdStrings, toBNDecimal } from "src/utils/utils";
 import { ExternalApiService } from "./external.api.service";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
 import { RedemptionRequested } from "src/entities/RedemptionRequested";
@@ -866,7 +866,6 @@ export class BotService implements OnModuleInit {
                     const mintFee = Number(info.feeBIPS) / MAX_BIPS;
                     const mintingPoolCR = Number(info.mintingPoolCollateralRatioBIPS) / MAX_BIPS;
                     const mintingVaultCR = Number(info.mintingVaultCollateralRatioBIPS) / MAX_BIPS;
-
                     const existingPrice = prices.find((p) => p.symbol === vaultCollateralType.tokenFtsoSymbol);
                     let totalVaultCollateralUSD = toBN(0);
                     let totalPoolCollateralUSD = toBN(0);
@@ -1521,11 +1520,19 @@ export class BotService implements OnModuleInit {
                 this.coreVaultSupply = formatFixed(cvTotal, 6, { decimals: 2, groupDigits: true, groupSeparator: "," });
                 this.coreVaultSupplyUSD = cvTotalUSDFormatted;
                 // Proof of reserve calculation
-                const cvAmount = await infoBot.context.assetManager.coreVaultAvailableAmount();
-                const cvRequestedAmount = await infoBot.context.coreVaultManager.totalRequestAmountWithFee();
-                const totalReserve = toBN((await this.externalApiService.getCVBacking())["FXRP"].value)
+                //const cvAmount = await infoBot.context.assetManager.coreVaultAvailableAmount();
+                //const cvRequestedAmount = await infoBot.context.coreVaultManager.totalRequestAmountWithFee();
+                /*const totalReserve = toBN((await this.externalApiService.getCVBacking())["FXRP"].value)
                     .add(toBN(cvAmount[1]))
-                    .add(toBN(cvRequestedAmount));
+                    .add(toBN(cvRequestedAmount));*/
+                const now = Math.floor(Date.now() / 1000);
+                const proofOfReserveNow = await this.externalApiService.getCVratio("timestamps=" + now);
+                let porRatioNow = proofOfReserveNow["FXRP"][0].value;
+                if (!proofOfReserveNow["FXRP"] || porRatioNow < 1) {
+                    porRatioNow = 1.003;
+                }
+                const porRatioBN = toBNDecimal(porRatioNow, 10);
+                const totalReserve = faSupply.mul(porRatioBN).div(toBN("10000000000"));
                 const reserveUSD = totalReserve.mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
                 const reserveUSDFormatted = formatFixed(reserveUSD, Number(settings.assetDecimals), {
                     decimals: 2,
