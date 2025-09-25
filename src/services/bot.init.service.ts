@@ -766,7 +766,6 @@ export class BotService implements OnModuleInit {
             //TODO Add native token symbol to .env
             const cflrPrice = await priceReader.getPrice(infoBot.context.nativeChainInfo.tokenSymbol, false, settings.maxTrustedPriceAgeSeconds);
             const priceUSD = cflrPrice.price.mul(toBNExp(1, 18));
-            let feesAvailable = toBN(0);
             const prices: Price[] = [
                 {
                     symbol: infoBot.context.nativeChainInfo.tokenSymbol,
@@ -856,9 +855,6 @@ export class BotService implements OnModuleInit {
                         newAgentAdditionalInfos[i];
 
                     const poolToken = await IERC20.at(await pool.poolToken());
-
-                    const rewardsAvailable = await pool.totalFAssetFees();
-                    feesAvailable = feesAvailable.add(rewardsAvailable);
                     const poolcr = Number(info.poolCollateralRatioBIPS) / MAX_BIPS;
                     const vaultcr = Number(info.vaultCollateralRatioBIPS) / MAX_BIPS;
                     const poolExitCR = Number(info.poolExitCollateralRatioBIPS) / MAX_BIPS;
@@ -1142,8 +1138,6 @@ export class BotService implements OnModuleInit {
                         agent.description = description;
                     }*/
                     const pool = await CollateralPool.at(agent.poolAddress);
-                    const rewardsAvailable = await pool.totalFAssetFees();
-                    feesAvailable = feesAvailable.add(rewardsAvailable);
                     const poolcr = Number(info.poolCollateralRatioBIPS) / MAX_BIPS;
                     const vaultcr = Number(info.vaultCollateralRatioBIPS) / MAX_BIPS;
                     const poolExitCR = Number(info.poolExitCollateralRatioBIPS) / MAX_BIPS;
@@ -1430,13 +1424,6 @@ export class BotService implements OnModuleInit {
                 continue;
             }
             //calculate price of fees
-            const feesAvailableUSD = toBN(feesAvailable).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-            const feesAvailableUSDFormatted = formatFixed(feesAvailableUSD, Number(settings.assetDecimals), {
-                decimals: 3,
-                groupDigits: true,
-                groupSeparator: ",",
-            });
-            rewardsAvailableUSD = sumUsdStrings(rewardsAvailableUSD, feesAvailableUSDFormatted);
             logger.info(`Pools for fasset ${fasset} updated in: ${(Date.now() - start) / 1000}`);
             supplyFa.supply = formatFixed(toBN(faSupply), Number(settings.assetDecimals), {
                 decimals: fasset.includes("XRP") ? 3 : 6,
@@ -1465,7 +1452,7 @@ export class BotService implements OnModuleInit {
             supplyFasset.push(supplyFa);
             const fa = NETWORK_SYMBOLS.find((fa) => (this.envType == "dev" ? fa.test : fa.real) === fasset);
             const rewards = poolRewardsPaid[fa.real];
-            const rewardsAsset = formatFixed(toBN(rewards?.value ?? "0").add(toBN(feesAvailable)), Number(settings.assetDecimals), {
+            const rewardsAsset = formatFixed(toBN(rewards?.value ?? "0"), Number(settings.assetDecimals), {
                 decimals: fasset.includes("XRP") ? 3 : 6,
                 groupDigits: true,
                 groupSeparator: ",",
