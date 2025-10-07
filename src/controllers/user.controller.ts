@@ -218,4 +218,23 @@ export class UserController {
             );
         }
     }
+
+    @Get("underlyingStatus/:fasset/:paymentReference")
+    @ApiResponse({
+        type: ExecutorResponse,
+    })
+    getUnderlyingStatus(@Param("fasset") fasset: string, @Param("paymentReference") paymentReference: string): Promise<boolean> {
+        try {
+            return this.userService.mintingUnderlyingTransactionExists(fasset, paymentReference);
+        } catch (error) {
+            logger.error(`Error in getUnderlyigStatus for ${fasset} and ${paymentReference}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
 }

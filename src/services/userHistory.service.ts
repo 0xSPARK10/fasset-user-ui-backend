@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from "@nestjs/common";
-import { Progress } from "../interfaces/requestResponse";
+import { MintingTransaction, Progress } from "../interfaces/requestResponse";
 import { toBN } from "@flarelabs/fasset-bots-core/utils";
 import { BotService } from "./bot.init.service";
 import { EntityManager } from "@mikro-orm/core";
@@ -16,6 +16,8 @@ import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { RedemptionRequested } from "src/entities/RedemptionRequested";
 import { UserService } from "./user.service";
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
+import { CollateralReservationEvent } from "src/entities/CollateralReservation";
+import { Pool } from "src/entities/Pool";
 
 @Injectable()
 export class HistoryService {
@@ -52,14 +54,34 @@ export class HistoryService {
                 continue;
             }
             let mintTxhash = mint.txhash;
+            let missingUnderlying = false;
+            let underlyingTransactionData: MintingTransaction | null = null;
+            const isDefaulted = defaultEvent ? true : false;
             if (mint.txhash == null) {
                 const underlyingPayment = await this.em.findOne(UnderlyingPayment, {
                     paymentReference: mint.paymentReference,
                 });
+                missingUnderlying = true;
+                const crData = await this.em.findOne(CollateralReservationEvent, {
+                    paymentReference: mint.paymentReference,
+                });
+                if (!crData || isDefaulted) {
+                    missingUnderlying = false;
+                } else {
+                    const agentName = await this.em.findOne(Pool, {
+                        vaultAddress: mint.vaultAddress,
+                    });
+                    underlyingTransactionData = {
+                        paymentReference: crData.paymentReference,
+                        destinationAddress: crData.paymentAddress,
+                        amount: toBN(crData.valueUBA).add(toBN(crData.feeUBA)).toString(),
+                        agentName: agentName ? agentName.agentName : "FlareAgent",
+                    };
+                }
                 if (underlyingPayment) {
                     mintTxhash = underlyingPayment.underlyingHash;
                 } else {
-                    mintTxhash = "000000000000000000000000";
+                    mintTxhash = "Collateral was reserved but XRP deposit is missing.";
                 }
             }
             const progress = {
@@ -69,7 +91,9 @@ export class HistoryService {
                 fasset: mint.fasset,
                 status: mint.processed,
                 txhash: mintTxhash,
-                defaulted: defaultEvent ? true : false,
+                defaulted: isDefaulted,
+                missingUnderlying: missingUnderlying,
+                underlyingTransactionData: underlyingTransactionData,
             };
             userProgress.push(progress);
         }
@@ -141,6 +165,7 @@ export class HistoryService {
                         underlyingPaid: "0",
                         incomplete: incomplete,
                         remainingLots: incompleteData?.remainingLots ?? null,
+                        redemptionBlocked: ticket.blocked,
                     };
                     userProgress.push(progress);
                 } else {
@@ -162,6 +187,7 @@ export class HistoryService {
                         underlyingPaid: amount,
                         incomplete: incomplete,
                         remainingLots: incompleteData?.remainingLots ?? null,
+                        redemptionBlocked: ticket.blocked,
                     };
                     userProgress.push(progress);
                 }

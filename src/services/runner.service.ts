@@ -24,6 +24,7 @@ import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
 import { ITransaction } from "@flarelabs/fasset-bots-core";
 import { TEN_MINUTES } from "src/utils/constants";
+import { RedemptionBlocked } from "src/entities/RedemptionBlockedEvent";
 
 enum RedemptionStatus {
     EXPIRED = "EXPIRED",
@@ -344,7 +345,7 @@ export class RunnerService implements OnApplicationBootstrap {
                 if (redemption == null) {
                     continue;
                 }
-                if (time > redemption.validUntil - 4 * 24 * 60 * 60 * 1000) {
+                if (time > redemption.validUntil - 5 * 24 * 60 * 60 * 1000) {
                     redemption.processed = true;
                     await this.em.persistAndFlush(redemption);
                     continue;
@@ -371,12 +372,21 @@ export class RunnerService implements OnApplicationBootstrap {
                             await this.em.persistAndFlush(redemption);
                             continue;
                         }
-                        if (status == "PENDING") {
-                            continue;
-                        }
                         if (status == "DEFAULT") {
                             redemption.defaulted = true;
                             await this.em.persistAndFlush(redemption);
+                        }
+                        const blocked = await this.em.findOne(RedemptionBlocked, {
+                            requestId: redemption.requestId,
+                        });
+                        if (blocked) {
+                            redemption.processed = true;
+                            redemption.blocked = true;
+                            await this.em.persistAndFlush(redemption);
+                            continue;
+                        }
+                        if (status == "PENDING") {
+                            continue;
                         }
                     } catch (error) {
                         logger.error(`Error in processRedemptions status:`, error);
@@ -405,6 +415,15 @@ export class RunnerService implements OnApplicationBootstrap {
                         if (status == "SUCCESS" || status == "EXPIRED") {
                             redemption.processed = true;
                             redemption.defaulted = false;
+                            await this.em.persistAndFlush(redemption);
+                            continue;
+                        }
+                        const blocked = await this.em.findOne(RedemptionBlocked, {
+                            requestId: redemption.requestId,
+                        });
+                        if (blocked) {
+                            redemption.processed = true;
+                            redemption.blocked = true;
                             await this.em.persistAndFlush(redemption);
                             continue;
                         }

@@ -9,6 +9,7 @@ import { Minting } from "src/entities/Minting";
 import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { Pool } from "src/entities/Pool";
 import { Redemption } from "src/entities/Redemption";
+import { RedemptionBlocked } from "src/entities/RedemptionBlockedEvent";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
 import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
 import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
@@ -37,6 +38,7 @@ if (process.env.DB_TYPE === "sqlite") {
             UnderlyingPayment,
             IndexerState,
             MintingDefaultEvent,
+            RedemptionBlocked,
         ],
         driver: SqliteDriver,
         debug: false,
@@ -60,6 +62,7 @@ if (process.env.DB_TYPE === "sqlite") {
             UnderlyingPayment,
             IndexerState,
             MintingDefaultEvent,
+            RedemptionBlocked,
         ],
         driver: PostgreSqlDriver,
         debug: false,

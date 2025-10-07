@@ -58,6 +58,7 @@ import {
     generateTimestamps,
     isEmptyObject,
 } from "src/utils/dashboard.utils";
+import { RedemptionBlocked } from "src/entities/RedemptionBlockedEvent";
 
 const IRelay = artifacts.require("IRelay");
 const IERC20 = artifacts.require("IERC20Metadata");
@@ -158,6 +159,7 @@ export class BotService implements OnModuleInit {
             web3.utils.keccak256("RedemptionDefault(address,address,uint256,uint256,uint256,uint256)"),
             web3.utils.keccak256("RedemptionRequestIncomplete(address,uint256)"),
             web3.utils.keccak256("MintingPaymentDefault(address,address,uint256,uint256)"),
+            web3.utils.keccak256("RedemptionPaymentBlocked(address,address,uint256,bytes32,uint256,int256)"),
         ];
 
         const configFileContent = readFileSync(filePathConfig, "utf-8");
@@ -656,6 +658,20 @@ export class BotService implements OnModuleInit {
                                                     event.transactionHash
                                                 );
                                                 await this.em.persistAndFlush(mintingDefault);
+                                            } else {
+                                                if (event.event == "RedemptionPaymentBlocked") {
+                                                    const redemptionBlocked = new RedemptionBlocked(
+                                                        event.args.agentVault,
+                                                        event.args.redeemer,
+                                                        event.args.requestId,
+                                                        event.args.transactionHash,
+                                                        event.args.redemptionAmountUBA,
+                                                        event.args.spentUnderlyingUBA,
+                                                        timestamp,
+                                                        event.transactionHash
+                                                    );
+                                                    await this.em.persistAndFlush(redemptionBlocked);
+                                                }
                                             }
                                         }
                                     }

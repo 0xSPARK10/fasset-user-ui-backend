@@ -77,27 +77,20 @@ export function sumUsdStrings(usd1: string, usd2: string): string {
 }
 
 export function calculateOvercollateralizationPercentage(collateral: string, minted: string): string | null {
-    // Helper function to clean and parse the USD value
     const parseUSDValue = (value: string): number => {
         // Remove commas and convert to number
         const cleanedValue = value.replace(/,/g, "");
         return parseFloat(cleanedValue);
     };
-
-    // Parse the input values
     const totalCollateral = parseUSDValue(collateral);
     const mintedValue = parseUSDValue(minted);
-
-    // Check if mintedValue is zero to avoid division by zero
     if (mintedValue === 0) {
         console.error("Minted value cannot be zero.");
-        return "0"; // or throw an error based on your requirements
+        return "0";
     }
 
     // Calculate the overcollateralization percentage
     const overcollateralizationPercentage = (totalCollateral / mintedValue) * 100;
-
-    // Return the result formatted as a string with two decimal places
     return overcollateralizationPercentage.toFixed(2);
 }
 

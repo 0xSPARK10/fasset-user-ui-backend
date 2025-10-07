@@ -65,6 +65,9 @@ export class Redemption {
     @Property({ nullable: true, type: "bigint" })
     timestamp: number;
 
+    @Property()
+    blocked: boolean;
+
     constructor(
         txhash: string,
         processed: boolean,
@@ -95,5 +98,6 @@ export class Redemption {
         this.validUntil = validUntil;
         this.fasset = fasset;
         this.timestamp = timestamp;
+        this.blocked = false;
     }
 }

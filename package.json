@@ -49,7 +49,8 @@
     "swagger-ui-express": "^5.0.0",
     "typeorm": "^0.3.20",
     "winston": "^3.13.1",
-    "winston-daily-rotate-file": "^5.0.0"
+    "winston-daily-rotate-file": "^5.0.0",
+    "xrpl": "^4.4.2"
   },
   "devDependencies": {
     "@flarelabs/fasset-bots-core": "link:./fasset-bots/packages/fasset-bots-core",

@@ -41,6 +41,8 @@ import { EarnController } from "./controllers/earn.controller";
 import { EarnService } from "./services/earn.service";
 import { VersionController } from "./controllers/version.controller";
 import { VersionService } from "./services/version.service";
+import { RedemptionBlocked } from "./entities/RedemptionBlockedEvent";
+import { XRPLApiService } from "./services/xrpl-api.service";
 
 @Module({
     imports: [
@@ -62,6 +64,7 @@ import { VersionService } from "./services/version.service";
             UnderlyingPayment,
             IndexerState,
             MintingDefaultEvent,
+            RedemptionBlocked,
         ]),
         ConfigModule.forRoot({
             isGlobal: true,
@@ -95,6 +98,7 @@ import { VersionService } from "./services/version.service";
         HistoryService,
         EarnService,
         VersionService,
+        XRPLApiService,
     ],
     exports: [BotService, UserService, PoolService, UtxoService, HistoryService],
 })

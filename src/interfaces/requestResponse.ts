@@ -183,9 +183,17 @@ export class VaultCollateralRedemption {
     token: string;
 }
 
+export class XRPAccountInfo {
+    @ApiProperty({ example: false })
+    depositAuth?: boolean;
+    @ApiProperty({ example: false })
+    destTagReq?: boolean;
+}
+
 export class CommonBalance {
     @ApiProperty({ example: "1,200.11" })
     balance: string;
+    accountInfo?: XRPAccountInfo;
 }
 
 export class NativeBalanceItem extends CommonBalance {
@@ -417,6 +425,17 @@ export class AvailableFassets {
     fassets: string[];
 }
 
+export class MintingTransaction {
+    @ApiProperty({ example: "0x7b7204684854Da846E49dEFd1408b52c4e0E3ce8" })
+    paymentReference: string;
+    @ApiProperty({ example: "rfkjtg" })
+    destinationAddress: string;
+    @ApiProperty({ example: "12400" })
+    amount: string;
+    @ApiProperty({ example: "Agent" })
+    agentName: string;
+}
+
 export class Progress {
     @ApiProperty({ example: "REDEEM" })
     action: string;
@@ -444,6 +463,12 @@ export class Progress {
     incomplete?: boolean;
     @ApiProperty({ example: "30" })
     remainingLots?: string;
+    @ApiProperty({ example: true })
+    missingUnderlying?: boolean;
+    @ApiProperty({ example: "Data for underlyingTx" })
+    underlyingTransactionData?: MintingTransaction;
+    @ApiProperty({ example: true })
+    redemptionBlocked?: boolean;
 }
 
 export class submitTxResponse {
