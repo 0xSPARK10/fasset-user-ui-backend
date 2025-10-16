@@ -253,9 +253,11 @@ export class RunnerService implements OnApplicationBootstrap {
                             // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         } catch (error) {
                             if (error.message.includes("There aren't any working attestation providers")) {
-                                minting.state = false;
-                                minting.proofRequestData = null;
-                                minting.proofRequestRound = null;
+                                if (await this.userBotMap.get(fasset).context.attestationProvider.roundFinalized(minting.proofRequestRound)) {
+                                    minting.state = false;
+                                    minting.proofRequestData = null;
+                                    minting.proofRequestRound = null;
+                                }
                                 logger.error(`Error in processMintings (obtainPaymentProof):`, error);
                             }
                             continue;
@@ -473,9 +475,11 @@ export class RunnerService implements OnApplicationBootstrap {
                                 );
                         } catch (error) {
                             if (error.message.includes("There aren't any working attestation providers")) {
-                                redemption.state = false;
-                                redemption.proofRequestData = null;
-                                redemption.proofRequestRound = null;
+                                if (await this.userBotMap.get(fasset).context.attestationProvider.roundFinalized(redemption.proofRequestRound)) {
+                                    redemption.state = false;
+                                    redemption.proofRequestData = null;
+                                    redemption.proofRequestRound = null;
+                                }
                                 logger.error(`Error in processMintings (obtainPaymentProof):`, error);
                             }
                             continue;

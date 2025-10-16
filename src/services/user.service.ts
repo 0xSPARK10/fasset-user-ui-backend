@@ -242,7 +242,8 @@ export class UserService {
     async requestMinting(requestMint: RequestMint): Promise<void> {
         const count = await this.em.count(Minting, { txhash: requestMint.txhash });
         if (count != 0) {
-            throw new LotsException("Minting with this txhash already exists.");
+            //throw new LotsException("Minting with this txhash already exists.");
+            return;
         }
         let crEvent;
         crEvent = await this.em.findOne(CollateralReservationEvent, { collateralReservationId: requestMint.collateralReservationId });
