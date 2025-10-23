@@ -48,6 +48,8 @@ export interface SupplyFasset {
     mintedPercentage: string;
     availableToMintAsset: string;
     mintedLots: number;
+    mintingCap: string;
+    mintingCapUSD: string;
 }
 
 export interface SupplyTotalCollateral {

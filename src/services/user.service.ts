@@ -43,7 +43,7 @@ import { LotsException } from "../exceptions/lots.exception";
 import { error } from "console";
 import { Pool } from "../entities/Pool";
 import { CollateralPrice } from "@flarelabs/fasset-bots-core";
-import { dateStringToTimestamp, formatBNToDisplayDecimals, sleep, timestampToDateString } from "src/utils/utils";
+import { dateStringToTimestamp, formatBNToDisplayDecimals, isValidWalletAddress, sleep, timestampToDateString } from "src/utils/utils";
 import { EXECUTION_FEE, NETWORK_SYMBOLS, RedemptionStatusEnum } from "src/utils/constants";
 import {
     ClaimedPools,
@@ -72,6 +72,7 @@ import { HttpService } from "@nestjs/axios";
 import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { XRPLApiService } from "./xrpl-api.service";
+import { ChainType, Wallet } from "src/entities/Wallet";
 
 const IERC20 = artifacts.require("IERC20Metadata");
 const CollateralPool = artifacts.require("CollateralPool");
@@ -240,6 +241,23 @@ export class UserService {
     }
 
     async requestMinting(requestMint: RequestMint): Promise<void> {
+        if (requestMint.underlyingWalletId && isValidWalletAddress(requestMint.userUnderlyingAddress)) {
+            const undWallet = await this.em.findOne(Wallet, { address: requestMint.userUnderlyingAddress });
+            if (!undWallet) {
+                const wallet = new Wallet(requestMint.userUnderlyingAddress, ChainType.XRP, requestMint.underlyingWalletId);
+                await this.em.persistAndFlush(wallet);
+            }
+        }
+        if (requestMint.nativeWalletId && isValidWalletAddress(requestMint.userAddress)) {
+            const natWallet = await this.em.findOne(Wallet, { address: requestMint.userAddress });
+            if (!natWallet) {
+                const wallet = new Wallet(requestMint.userAddress, ChainType.EVM, requestMint.nativeWalletId);
+                await this.em.persistAndFlush(wallet);
+            }
+        }
+        if (requestMint.collateralReservationId == "") {
+            return;
+        }
         const count = await this.em.count(Minting, { txhash: requestMint.txhash });
         if (count != 0) {
             //throw new LotsException("Minting with this txhash already exists.");

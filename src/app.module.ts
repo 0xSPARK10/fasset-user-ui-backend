@@ -43,6 +43,9 @@ import { VersionController } from "./controllers/version.controller";
 import { VersionService } from "./services/version.service";
 import { RedemptionBlocked } from "./entities/RedemptionBlockedEvent";
 import { XRPLApiService } from "./services/xrpl-api.service";
+import { WalletController } from "./controllers/wallet.controller";
+import { WalletService } from "./services/wallet.service";
+import { Wallet } from "./entities/Wallet";
 
 @Module({
     imports: [
@@ -65,6 +68,7 @@ import { XRPLApiService } from "./services/xrpl-api.service";
             IndexerState,
             MintingDefaultEvent,
             RedemptionBlocked,
+            Wallet,
         ]),
         ConfigModule.forRoot({
             isGlobal: true,
@@ -85,6 +89,7 @@ import { XRPLApiService } from "./services/xrpl-api.service";
         SwaggerController,
         EarnController,
         VersionController,
+        WalletController,
     ],
     providers: [
         MikroOrmHealthIndicator,
@@ -99,6 +104,7 @@ import { XRPLApiService } from "./services/xrpl-api.service";
         EarnService,
         VersionService,
         XRPLApiService,
+        WalletService,
     ],
     exports: [BotService, UserService, PoolService, UtxoService, HistoryService],
 })

@@ -16,6 +16,7 @@ import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
 import { RedemptionRequested } from "src/entities/RedemptionRequested";
 import { FullRedemption } from "src/entities/RedemptionWhole";
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
+import { Wallet } from "src/entities/Wallet";
 import { logger } from "src/logger/winston.logger";
 
 let config: Options;
@@ -39,6 +40,7 @@ if (process.env.DB_TYPE === "sqlite") {
             IndexerState,
             MintingDefaultEvent,
             RedemptionBlocked,
+            Wallet,
         ],
         driver: SqliteDriver,
         debug: false,
@@ -63,6 +65,7 @@ if (process.env.DB_TYPE === "sqlite") {
             IndexerState,
             MintingDefaultEvent,
             RedemptionBlocked,
+            Wallet,
         ],
         driver: PostgreSqlDriver,
         debug: false,

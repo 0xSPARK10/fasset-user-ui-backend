@@ -176,7 +176,19 @@ export async function bootstrap() {
     });
     app.use(helmet());
 
-    const config = new DocumentBuilder().setTitle("Fasset user").setDescription("Fasset user backend APIs").setVersion("1.0").build();
+    const config = new DocumentBuilder()
+        .setTitle("Fasset user")
+        .setDescription("Fasset user backend APIs")
+        .setVersion("1.0")
+        .addApiKey(
+            {
+                type: "apiKey",
+                name: "x-api-key",
+                in: "header",
+            },
+            "api_key"
+        )
+        .build();
     const document = SwaggerModule.createDocument(app, config);
     const rootPath = process.env.ROOT_PATH || "";
     app.setGlobalPrefix(rootPath);

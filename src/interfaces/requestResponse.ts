@@ -1,6 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { RedemptionStatusEnum } from "src/utils/constants";
 import { RedemptionIncomplete } from "./structure";
+import { WalletType } from "src/entities/Wallet";
 
 export interface CostonExpTokenBalance {
     balance: string;
@@ -51,6 +52,16 @@ export class RequestMint {
         example: "0x0048508b510502555ED47E98dE98Dd6426dDd0C4",
     })
     vaultAddress: string;
+    @ApiProperty({
+        enum: WalletType,
+        description: "Wallet type",
+    })
+    nativeWalletId?: WalletType;
+    @ApiProperty({
+        enum: WalletType,
+        description: "Wallet type",
+    })
+    underlyingWalletId?: WalletType;
 }
 
 export class CREvent {

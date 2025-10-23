@@ -99,3 +99,13 @@ export function toBNDecimal(value, decimals = 10) {
     const fractionPadded = fraction.padEnd(decimals, "0").slice(0, decimals);
     return new BN(whole + fractionPadded);
 }
+
+export function isValidWalletAddress(address: string): boolean {
+    if (!address || typeof address !== "string") return false;
+    const evmRegex = /^0x[a-fA-F0-9]{40}$/;
+    if (evmRegex.test(address)) return true;
+    const xrpRegex = /^r[1-9A-HJ-NP-Za-km-z]{25,35}$/;
+    if (xrpRegex.test(address)) return true;
+
+    return false;
+}

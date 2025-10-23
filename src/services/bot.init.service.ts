@@ -775,6 +775,8 @@ export class BotService implements OnModuleInit {
                 mintedPercentage: "0",
                 availableToMintAsset: "0",
                 mintedLots: 0,
+                mintingCap: "0",
+                mintingCapUSD: "0",
             };
             const mintingCap = toBN(settings.mintingCapAMG).mul(toBN(settings.assetMintingGranularityUBA));
             const priceReader = await TokenPriceReader.create(settings);
@@ -1401,6 +1403,19 @@ export class BotService implements OnModuleInit {
                 });
                 supplyFa.availableToMintUSD = availableToMintUSDFormatted;
                 supplyFa.allLots = mintedLots.toNumber() + Number(availableLotsCap);
+                const mintingCapUSD = toBN(mintingCap)
+                    .mul(existingPriceAsset.price)
+                    .div(toBNExp(1, Number(existingPriceAsset.decimals)));
+                supplyFa.mintingCapUSD = formatFixed(mintingCapUSD, Number(settings.assetDecimals), {
+                    decimals: 3,
+                    groupDigits: true,
+                    groupSeparator: ",",
+                });
+                supplyFa.mintingCap = formatFixed(toBN(mintingCap), Number(settings.assetDecimals), {
+                    decimals: fasset.includes("XRP") ? 3 : 6,
+                    groupDigits: true,
+                    groupSeparator: ",",
+                });
             } else {
                 supplyFa.allLots = supplyFa.availableToMintLots + supplyFa.mintedLots;
             }
