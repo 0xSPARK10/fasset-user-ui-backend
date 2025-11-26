@@ -43,7 +43,7 @@ import { LotsException } from "../exceptions/lots.exception";
 import { error } from "console";
 import { Pool } from "../entities/Pool";
 import { CollateralPrice } from "@flarelabs/fasset-bots-core";
-import { dateStringToTimestamp, formatBNToDisplayDecimals, isValidWalletAddress, sleep, timestampToDateString } from "src/utils/utils";
+import { calculateUSDValue, dateStringToTimestamp, formatBNToDisplayDecimals, isValidWalletAddress, sleep, timestampToDateString } from "src/utils/utils";
 import { EXECUTION_FEE, NETWORK_SYMBOLS, RedemptionStatusEnum } from "src/utils/constants";
 import {
     ClaimedPools,
@@ -61,8 +61,6 @@ import { logger } from "src/logger/winston.logger";
 import { FullRedemption } from "src/entities/RedemptionWhole";
 import { Collateral } from "src/entities/Collaterals";
 import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
-import { TX_BLOCKED, TX_FAILED, TX_SUCCESS, TxInputOutput } from "@flarelabs/fasset-bots-core";
-import { BTC_MDU } from "@flarelabs/fasset-bots-core";
 import { ExternalApiService } from "./external.api.service";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
@@ -461,33 +459,6 @@ export class UserService {
         }
     }
 
-    async getXpubBalance(fasset: string, address: string) {
-        try {
-            const bot = this.botService.getUserBot(fasset);
-            const balances = await this.externalApiService.getXpubBalanceBlockBook(fasset, address);
-            const balance = toBN(balances.balance);
-            if (fasset.includes("DOGE")) {
-                return {
-                    balance: formatFixed(toBN(balance), bot.context.chainInfo.decimals, {
-                        decimals: 2,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    }),
-                };
-            } else {
-                return {
-                    balance: formatFixed(toBN(balance), bot.context.chainInfo.decimals, {
-                        decimals: 8,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    }),
-                };
-            }
-        } catch (error) {
-            logger.error("Error in underlying balance xpub: ", error);
-        }
-    }
-
     shuffleArray<T>(array: T[]): T[] {
         const shuffledArray = array.slice();
         for (let i = shuffledArray.length - 1; i > 0; i--) {
@@ -666,14 +637,7 @@ export class UserService {
         // Native balance
         const nativeBalanceWrapped = await web3.eth.getBalance(address);
         const balanceNative = formatBNToDisplayDecimals(toBN(nativeBalanceWrapped), 3, 18);
-        const nativeUSD = toBN(nativeBalanceWrapped)
-            .mul(priceUSD)
-            .div(toBNExp(1, 18 + Number(cflrPrice.decimals)));
-        const nativeUSDFormatted = formatFixed(nativeUSD, 18, {
-            decimals: 3,
-            groupDigits: true,
-            groupSeparator: ",",
-        });
+        const nativeUSDFormatted = calculateUSDValue(toBN(nativeBalanceWrapped), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
         collaterals.push({
             symbol: bot.context.nativeChainInfo.tokenSymbol,
             balance: balanceNative,
@@ -689,14 +653,13 @@ export class UserService {
             const priceReaderAsset = await TokenPriceReader.create(settingsAsset);
             const priceAsset = await priceReaderAsset.getPrice(this.botService.getAssetSymbol(fasset), false, settingsAsset.maxTrustedPriceAgeSeconds);
             const fBalance = await fBot.context.fAsset.balanceOf(address);
-            const assetUSD = toBN(toBN(fBalance).sub(toBN(fBalance).mul(toBN(redemptionFee)).divn(MAX_BIPS)))
-                .mul(priceAsset.price)
-                .div(toBNExp(1, Number(priceAsset.decimals)));
-            const assetUSDFormatted = formatFixed(assetUSD, Number(settingsAsset.assetDecimals), {
-                decimals: 3,
-                groupDigits: true,
-                groupSeparator: ",",
-            });
+            const assetUSDFormatted = calculateUSDValue(
+                toBN(toBN(fBalance).sub(toBN(fBalance).mul(toBN(redemptionFee)).divn(MAX_BIPS))),
+                priceAsset.price,
+                Number(priceAsset.decimals),
+                Number(settingsAsset.assetDecimals),
+                3
+            );
             const lotSizeUBA = toBN(settingsAsset.lotSizeAMG).mul(toBN(settingsAsset.assetMintingGranularityUBA));
             const lots = fBalance.div(lotSizeUBA);
             const fDecimals = Number(settingsAsset.assetDecimals);
@@ -769,6 +732,7 @@ export class UserService {
                             paymentAmount: paymentAmount.toString(),
                             paymentAddress: decodedLog.paymentAddress,
                             paymentReference: decodedLog.paymentReference,
+                            lastUnderlyingBlock: decodedLog.lastUnderlyingBlock,
                         } as CREvent;
                     } else {
                         return {
@@ -776,6 +740,7 @@ export class UserService {
                             paymentAmount: decodedLog.valueUBA,
                             paymentAddress: decodedLog.paymentAddress,
                             paymentReference: decodedLog.paymentReference,
+                            lastUnderlyingBlock: decodedLog.lastUnderlyingBlock,
                             from: receipt.from,
                         } as CREventExtended;
                     }
@@ -958,12 +923,6 @@ export class UserService {
             const agentBackedFassets = await bot.context.assetManager.getFAssetsBackedByPool(agent.vaultAddress);
             const a = poolNatBalance.sub(userPoolNatReturn).mul(toBN(assetPriceDiv));
             const b = agentBackedFassets.mul(assetPriceMul).mul(exitCRBIPS.div(toBN(MAX_BIPS)));
-
-            /*//poolNatBalance.sub(userPoolNatReturn) >=
-      const c = poolNatBalance.sub(agentBackedFassets.mul(assetPriceMul).mul(exitCRBIPS.div(toBN(MAX_BIPS))).div(toBN(assetPriceDiv)));
-      const cpts = c.mul(totalSupply).div(poolNatBalance);
-      console.log(formatFixed(c, 18, { decimals: 3, groupDigits: true, groupSeparator: ","  }));
-      console.log(formatFixed(cpts, 18, { decimals: 3, groupDigits: true, groupSeparator: ","  }));*/
             if (a.gte(b)) {
                 return {
                     natReturn: formatFixed(userPoolNatReturn, 18, {
@@ -1013,10 +972,6 @@ export class UserService {
         const agents = await this.em.find(Pool, {});
         let userNatPosition = BN_ZERO;
         const cptokenBalances = await this.getTokenBalanceFromIndexer(address);
-        //const contractInfoMap = new Map<string, IndexerTokenBalances>(cptokenBalances.map((info) => [info.token, info]));
-        //const allTokens = await this.getTokenBalanceFromExplorer(address);
-        //const filteredTokens = allTokens.filter((token) => token.name.startsWith("FAsset Collateral Pool Token"));
-        //const contractInfoMap = new Map<string, CostonExpTokenBalance>(filteredTokens.map((info) => [info.contractAddress.toLowerCase(), info]));
         for (const agent of agents) {
             try {
                 const info = cptokenBalances[agent.tokenAddress];
@@ -1175,16 +1130,9 @@ export class UserService {
             const priceReader = await TokenPriceReader.create(settings);
             const price = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
             const priceMul = price.price.mul(toBNExp(1, 18));
-            const value = toBN(claim.value)
-                .mul(priceMul)
-                .div(toBNExp(1, 18 + Number(settings.assetDecimals)));
             claimedUSD.push({
                 fasset: fasset,
-                claimed: formatFixed(value, price.decimals.toNumber(), {
-                    decimals: 3,
-                    groupDigits: true,
-                    groupSeparator: ",",
-                }),
+                claimed: calculateUSDValue(toBN(claim.value), priceMul, 18 + Number(settings.assetDecimals), price.decimals.toNumber(), 3),
             });
         }
         return claimedUSD;

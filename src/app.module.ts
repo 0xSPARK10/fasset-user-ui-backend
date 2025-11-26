@@ -46,6 +46,8 @@ import { XRPLApiService } from "./services/xrpl-api.service";
 import { WalletController } from "./controllers/wallet.controller";
 import { WalletService } from "./services/wallet.service";
 import { Wallet } from "./entities/Wallet";
+import { EventReaderService } from "./services/event.reader.service";
+import { TimeDataService } from "./services/time.data.service";
 
 @Module({
     imports: [
@@ -105,6 +107,8 @@ import { Wallet } from "./entities/Wallet";
         VersionService,
         XRPLApiService,
         WalletService,
+        EventReaderService,
+        TimeDataService,
     ],
     exports: [BotService, UserService, PoolService, UtxoService, HistoryService],
 })

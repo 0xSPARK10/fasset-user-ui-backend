@@ -3,11 +3,15 @@ import { ApiResponse, ApiTags } from "@nestjs/swagger";
 import { CommonBalance, NativeBalanceItem } from "src/interfaces/requestResponse";
 import { logger } from "src/logger/winston.logger";
 import { UserService } from "src/services/user.service";
+import { UtxoService } from "src/services/utxo.service";
 
 @ApiTags("Balance")
 @Controller("api")
 export class BalanceController {
-    constructor(private readonly userService: UserService) {}
+    constructor(
+        private readonly userService: UserService,
+        private readonly utxoService: UtxoService
+    ) {}
 
     @Get("balance/underlying/:fasset/:address")
     @ApiResponse({
@@ -79,7 +83,7 @@ export class BalanceController {
     })
     getXpubBalance(@Param("fasset") fasset: string, @Param("xpub") address: string): Promise<CommonBalance> {
         try {
-            return this.userService.getXpubBalance(fasset, address);
+            return this.utxoService.getXpubBalance(fasset, address);
         } catch (error) {
             logger.error(`Error in getXpubBalance for ${address}`, error);
             throw new HttpException(

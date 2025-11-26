@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { CollateralClass, InfoBotCommands, TokenPriceReader, UserBotCommands } from "@flarelabs/fasset-bots-core";
-import { IRelayInstance, Truffle } from "@flarelabs/fasset-bots-core/types";
-import { MAX_BIPS, artifacts, formatFixed, toBN, toBNExp, web3 } from "@flarelabs/fasset-bots-core/utils";
+import { IRelayInstance } from "@flarelabs/fasset-bots-core/types";
+import { MAX_BIPS, artifacts, formatFixed, toBN, toBNExp } from "@flarelabs/fasset-bots-core/utils";
 import { EntityManager, MikroORM } from "@mikro-orm/core";
 import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { join } from "path";
@@ -9,7 +9,6 @@ import { Pool } from "../entities/Pool";
 import * as cron from "node-cron";
 import { HttpService } from "@nestjs/axios";
 import { ConfigService } from "@nestjs/config";
-import { BlockNumber, Log } from "web3-core";
 import { Liveness } from "../entities/AgentLiveness";
 import { readFileSync } from "fs";
 import { EMPTY_SUPPLY_BY_COLLATERAL, NETWORK_SYMBOLS, PROOF_OF_RESERVE } from "src/utils/constants";
@@ -23,42 +22,16 @@ import {
     SupplyFasset,
     SupplyTotalCollateral,
     TimeData,
-    TopPool,
     TopPoolData,
-    TimeDataCV,
     ProofOfReserve,
 } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
-import { AxiosRequestConfig } from "axios";
 import { Collateral } from "src/entities/Collaterals";
-import { calculateOvercollateralizationPercentage, formatBNToDisplayDecimals, sumUsdStrings, toBNDecimal } from "src/utils/utils";
+import { calculateOvercollateralizationPercentage, calculateUSDValue, getDefaultTimeData, sumUsdStrings, toBNDecimal } from "src/utils/utils";
 import { ExternalApiService } from "./external.api.service";
-import { CollateralReservationEvent } from "src/entities/CollateralReservation";
-import { RedemptionRequested } from "src/entities/RedemptionRequested";
 import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
 import { Secrets } from "@flarelabs/fasset-bots-core";
-import { EvmEvent } from "@flarelabs/fasset-bots-core";
-import { Web3ContractEventDecoder } from "@flarelabs/fasset-bots-core";
-import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
-import { IndexerState } from "src/entities/IndexerState";
-import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
-import { Redemption } from "src/entities/Redemption";
-import { Minting } from "src/entities/Minting";
-import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
-import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
-import {
-    calculateFassetSupplyDiff,
-    calculateInflowsOutflowsDiff,
-    calculatePoolCollateralDiff,
-    calculatePoolRewardsDiff,
-    formatTimeSeries,
-    formatTimeSeriesPercentage,
-    formatTimeSpanRatio,
-    formatTimespanToTimeseries,
-    generateTimestamps,
-    isEmptyObject,
-} from "src/utils/dashboard.utils";
-import { RedemptionBlocked } from "src/entities/RedemptionBlockedEvent";
+import { TimeDataService } from "./time.data.service";
 
 const IRelay = artifacts.require("IRelay");
 const IERC20 = artifacts.require("IERC20Metadata");
@@ -71,15 +44,10 @@ export class BotService implements OnModuleInit {
     private relay: IRelayInstance;
     private isRunning: boolean = false;
     private isRunningRedQueue: boolean = false;
-    private apiUrl: string;
+    private isRunningTimeData: boolean = false;
     private costonBotPath: string;
-    private username: string;
-    private password: string;
-    private lastEventBlockMap: Map<string, number> = new Map();
-    private lastEventBlock: number;
     private fassetSymbol: Map<string, string> = new Map();
     private secrets: Secrets;
-    private executor: string;
     em: EntityManager;
     fassetList: string[] = [];
     ecosystemTVL: string;
@@ -130,12 +98,10 @@ export class BotService implements OnModuleInit {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
         private readonly externalApiService: ExternalApiService,
-        @Inject(CACHE_MANAGER) private cacheManager: Cache
+        @Inject(CACHE_MANAGER) private cacheManager: Cache,
+        private readonly timeDataService: TimeDataService
     ) {
-        this.apiUrl = this.configService.get<string>("API_URL");
         this.costonBotPath = this.configService.get<string>("BOT_CONFIG_PATH");
-        this.username = this.configService.get<string>("USER_API");
-        this.password = this.configService.get<string>("PASS_API");
         this.envType = this.configService.get<string>("APP_TYPE");
         this.network = this.configService.get<string>("NETWORK", "coston");
     }
@@ -151,16 +117,6 @@ export class BotService implements OnModuleInit {
         const filePathSecrets = join(__dirname, "../..", "src", "secrets.json");
         const filePathConfig = join(__dirname, "../..", "src", pathForConfig);
         const userDataDirPath = join(__dirname, "../..", "src", "userDataDir");
-        // Change config file based on env.
-        this.eventTopics = [
-            web3.utils.keccak256("AgentPingResponse(address,address,uint256,string)"),
-            web3.utils.keccak256("CollateralReserved(address,address,uint256,uint256,uint256,uint256,uint256,uint256,string,bytes32,address,uint256)"),
-            web3.utils.keccak256("RedemptionRequested(address,address,uint256,string,uint256,uint256,uint256,uint256,uint256,bytes32,address,uint256)"),
-            web3.utils.keccak256("RedemptionDefault(address,address,uint256,uint256,uint256,uint256)"),
-            web3.utils.keccak256("RedemptionRequestIncomplete(address,uint256)"),
-            web3.utils.keccak256("MintingPaymentDefault(address,address,uint256,uint256)"),
-            web3.utils.keccak256("RedemptionPaymentBlocked(address,address,uint256,bytes32,uint256,int256)"),
-        ];
 
         const configFileContent = readFileSync(filePathConfig, "utf-8");
         const config = JSON.parse(configFileContent);
@@ -174,15 +130,12 @@ export class BotService implements OnModuleInit {
             this.fassetList.push(fasset);
             this.botMap.set(fasset, await UserBotCommands.create(filePathSecrets, filePathConfig, fasset, userDataDirPath));
             this.infoBotMap.set(fasset, await InfoBotCommands.create(this.secrets, filePathConfig, fasset));
-            this.executor = this.botMap.get(fasset).nativeAddress;
-            this.lastEventBlockMap.set(fasset, (await web3.eth.getBlockNumber()) - this.infoBotMap.get(fasset).context.nativeChainInfo.finalizationBlocks);
             const settings = await this.infoBotMap.get(fasset).context.assetManager.getSettings();
             this.assetManagerList.push({
                 fasset: fasset,
                 assetManager: this.infoBotMap.get(fasset).context.assetManager.address,
                 decimals: Number(settings.assetDecimals),
             });
-            this.lastEventBlock = (await web3.eth.getBlockNumber()) - 4;
             this.assetManagerAddressList.push(this.infoBotMap.get(fasset).context.assetManager.address);
             this.fassetDecimals.push({ fasset: fasset, decimals: (await this.infoBotMap.get(fasset).context.fAsset.decimals()).toNumber() });
             this.fassetSymbol.set(fasset, await this.infoBotMap.get(fasset).context.fAsset.assetSymbol());
@@ -208,16 +161,18 @@ export class BotService implements OnModuleInit {
         this.relay = await IRelay.at(relay.address);
         //this.lastEventBlock = 17581700;
         await this.getPools();
-        await this.getTimeData();
-        // eslint-disable-next-line @typescript-eslint/no-misused-promises
-        setImmediate(async () => {
-            await this.readEvents();
-        });
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.getTimeData();
         cron.schedule("*/30 * * * *", async () => {
-            try {
-                await this.getTimeData();
-            } catch (error) {
-                logger.error(`'Error running getTimeData:`, error);
+            if (!this.isRunningTimeData) {
+                this.isRunningTimeData = true;
+                try {
+                    await this.getTimeData();
+                } catch (error) {
+                    logger.error(`'Error running getTimeData:`, error);
+                } finally {
+                    this.isRunningTimeData = false;
+                }
             }
         });
         cron.schedule("*/1 * * * *", async () => {
@@ -225,7 +180,6 @@ export class BotService implements OnModuleInit {
                 this.isRunning = true;
                 try {
                     await this.getPools();
-                    //await this.readEvents();
                 } catch (error) {
                     logger.error(`'Error running getPools:`, error);
                 } finally {
@@ -251,465 +205,13 @@ export class BotService implements OnModuleInit {
         cron.stop();
     }
 
-    private getAuthHeaders(): AxiosRequestConfig["headers"] {
-        return {
-            Authorization: "Basic " + Buffer.from(`${this.username}:${this.password}`).toString("base64"),
-            "Content-Type": "application/json",
-        };
-    }
-
     //Get time data for landing page
     async getTimeData(): Promise<void> {
-        //Loop for hour, week, month, year
-        logger.info("Updating time data");
-        let diffs = [];
-        for (let i = 0; i <= 5; i++) {
-            let timeScopeAPI;
-            let timeScopeTime;
-            let n;
-            const topPoolsData: TopPool[] = [];
-            switch (i) {
-                case 0:
-                    timeScopeAPI = "day";
-                    timeScopeTime = 24 * 60 * 60;
-                    n = 6;
-                    break;
-                case 1:
-                    timeScopeAPI = "week";
-                    timeScopeTime = 7 * 24 * 60 * 60;
-                    n = 6;
-                    break;
-                case 2:
-                    timeScopeAPI = "month";
-                    timeScopeTime = 30 * 24 * 60 * 60;
-                    n = 10;
-                    break;
-                case 3:
-                    timeScopeAPI = "year";
-                    timeScopeTime = 365 * 24 * 60 * 60;
-                    n = 10;
-                    break;
-                case 4:
-                    timeScopeAPI = "yearToDate";
-                    const now = new Date();
-                    const startOfYear = new Date(now.getFullYear(), 0, 1);
-                    timeScopeTime = Math.floor((Date.now() - startOfYear.getTime()) / 1000);
-                    n = 10;
-                    break;
-                case 5:
-                    timeScopeAPI = "allTime";
-                    timeScopeTime = 5 * 365 * 24 * 60 * 60;
-                    n = 10;
-                    break;
-                default:
-                    continue;
-            }
-            let lookback = timeScopeAPI;
-            if (lookback != "year" && lookback != "month" && lookback != "week" && lookback != "day") {
-                lookback = "year";
-            }
-            const now = Math.floor(Date.now() / 1000);
-            const dayTimestamp = Math.floor(now) - timeScopeTime;
-            for (const p of this.topPools) {
-                const netw = NETWORK_SYMBOLS.find((item) => (this.envType == "dev" ? item.test : item.real) === p.fasset);
-                const collectedPoolFees = await this.externalApiService.getCollectedPoolFeesDiff(dayTimestamp.toString(), now.toString(), p.poolAddress);
-                const collateralPoolDiff = await this.externalApiService.getPoolCollateralDiff(dayTimestamp.toString(), now.toString(), p.poolAddress);
-                const diffTvl = calculatePoolCollateralDiff(collateralPoolDiff);
-                let diffRewards;
-                if (Object.keys(collectedPoolFees).length === 0) {
-                    diffRewards = calculatePoolRewardsDiff([
-                        { timestamp: 123, value: "0" },
-                        { timestamp: 1234, value: "0" },
-                    ]);
-                } else {
-                    if (Object.keys(collectedPoolFees).length === 1) {
-                        diffRewards = calculatePoolRewardsDiff([{ timestamp: 123, value: "0" }, collectedPoolFees[netw.real][0]]);
-                    } else {
-                        diffRewards = calculatePoolRewardsDiff(collectedPoolFees[netw.real]);
-                    }
-                }
-                topPoolsData.push({
-                    name: p.name,
-                    vaultAddress: p.vaultAddress,
-                    poolAddress: p.poolAddress,
-                    fasset: p.fasset,
-                    collateralSymbol: p.collateralSymbol,
-                    tvl: p.tvl,
-                    rewardsPaid: p.rewardsPaid,
-                    url: p.url,
-                    tvlDiff: diffTvl.diff,
-                    tvlDiffPositive: diffTvl.isPositive,
-                    rewardsDiff: diffRewards.diff,
-                    rewardsDiffPositive: diffRewards.isPositive,
-                });
-            }
-            const supply = await this.externalApiService.getFassetSupplyDiff(dayTimestamp.toString(), now.toString());
-            if (isEmptyObject(supply)) {
-                for (const f of this.fassetList) {
-                    diffs.push({ fasset: f, diff: "0.0", isPositive: true });
-                }
-            } else {
-                diffs = calculateFassetSupplyDiff(supply, this.fassetList, this.envType);
-            }
-            let pointMint = await this.externalApiService.getMintTimeseries(now, n, dayTimestamp);
-            if (isEmptyObject(pointMint) || pointMint == 0 || pointMint.length == 0) {
-                pointMint = [];
-                pointMint.push({
-                    index: 0,
-                    start: dayTimestamp,
-                    end: now,
-                    value: "0",
-                });
-            }
-            let pointRedeem = await this.externalApiService.getRedeemTimeseries(now, n, dayTimestamp);
-            if (isEmptyObject(pointRedeem) || pointRedeem == 0 || pointRedeem.length == 0) {
-                pointRedeem = [];
-                pointRedeem.push({
-                    index: 0,
-                    start: dayTimestamp,
-                    end: now,
-                    value: "0",
-                });
-            }
-            const graphMints = formatTimeSeries(pointMint);
-            const graphRedeems = formatTimeSeries(pointRedeem);
-            const totalCollateralDifference = await this.externalApiService.getTotalPoolCollateralDiff(dayTimestamp.toString(), now.toString());
-            const totalCollateralDiff = calculatePoolCollateralDiff(totalCollateralDifference);
-            // TODO actual calculation from indexer
-            let pointInflows = await this.externalApiService.getCVInflowTimeseries(now, n, dayTimestamp);
-            if (isEmptyObject(pointInflows) || pointInflows == 0 || pointInflows.length == 0) {
-                pointInflows = [];
-                pointInflows.push({
-                    index: 0,
-                    start: dayTimestamp,
-                    end: now,
-                    value: "0",
-                });
-            }
-            let pointOutflows = await this.externalApiService.getCVOutflowTimeSeries(now, n, dayTimestamp);
-            if (isEmptyObject(pointOutflows) || pointOutflows == 0 || pointOutflows.length == 0) {
-                pointOutflows = [];
-                pointOutflows.push({
-                    index: 0,
-                    start: dayTimestamp,
-                    end: now,
-                    value: "0",
-                });
-            }
-            const graphInflows = formatTimeSeries(pointInflows);
-            const graphOutflows = formatTimeSeries(pointOutflows);
-            const indexerTimestamps = [];
-            for (const g of graphInflows) {
-                indexerTimestamps.push(g.timestamp.toString());
-            }
-            const cvTvlTimestamps = await this.externalApiService.getCVTotalBalanceTimestamps(indexerTimestamps);
-            const graphTVL = formatTimespanToTimeseries(cvTvlTimestamps);
-            const getInflowsDiff = await this.externalApiService.getCVInflowsDiff(dayTimestamp.toString(), now.toString());
-            const getOutflowsDiff = await this.externalApiService.getCVOutflowsDiff(dayTimestamp.toString(), now.toString());
-            const inflowsDiff = calculateInflowsOutflowsDiff(getInflowsDiff);
-            const outflowsDiff = calculateInflowsOutflowsDiff(getOutflowsDiff);
-            const getCVDiff = await this.externalApiService.getCVTotalDiff(dayTimestamp.toString(), now.toString());
-            const cvDiff = calculatePoolCollateralDiff(getCVDiff);
-            const timestampsRatio = generateTimestamps(dayTimestamp, now, n);
-            let proofOfReserve = await this.externalApiService.getCVratio(timestampsRatio);
-            let graphPR = formatTimeSpanRatio(proofOfReserve["FXRP"]);
-            if (!proofOfReserve["FXRP"]) {
-                proofOfReserve = [
-                    {
-                        index: "0",
-                        start: dayTimestamp,
-                        end: now - 10000,
-                        value: "100.12",
-                    },
-                    {
-                        index: "0",
-                        start: dayTimestamp,
-                        end: now,
-                        value: "101.14",
-                    },
-                ];
-                graphPR = formatTimeSeriesPercentage(proofOfReserve);
-            }
-            /*const proofOfReserve: TimeSeriesIndexer[] = [
-                {
-                    index: "0",
-                    start: dayTimestamp,
-                    end: now - 10000,
-                    value: "100.12",
-                },
-                {
-                    index: "0",
-                    start: dayTimestamp,
-                    end: now,
-                    value: "101.14",
-                },
-            ];*/
-            //const graphPR = await this.formatTimeSeriesPercentage(proofOfReserve);
-            const coreVaultData: TimeDataCV = {
-                supplyDiff: cvDiff.diff,
-                isPositiveSupplyDiff: cvDiff.isPositive,
-                inflowGraph: graphInflows,
-                outflowGraph: graphOutflows,
-                inflowDiff: inflowsDiff.diff,
-                isPositiveInflowDiff: inflowsDiff.isPositive,
-                outflowDiff: outflowsDiff.diff,
-                isPositiveOutflowDiff: outflowsDiff.isPositive,
-                tvlGraph: graphTVL,
-            };
-            const timeData: TimeData = {
-                supplyDiff: diffs,
-                mintGraph: graphMints,
-                redeemGraph: graphRedeems,
-                bestPools: topPoolsData,
-                totalCollateralDiff: totalCollateralDiff.diff,
-                isPositiveCollateralDiff: totalCollateralDiff.isPositive,
-                coreVaultData: coreVaultData,
-                proofOfReserve: graphPR,
-            };
-            await this.cacheManager.set(timeScopeAPI + "Data", timeData, 0);
+        try {
+            await this.timeDataService.updateTimeData(this.topPools, this.fassetList, this.envType);
+        } catch (error) {
+            logger.error(`'Error running update time data:`, error);
         }
-        logger.info("Finished updating time data");
-    }
-
-    async readEvents(): Promise<void> {
-        const blockReadOffset = 30;
-        const bot = this.getInfoBot(this.fassetList[0]);
-        while (true) {
-            try {
-                const timestamp = Date.now();
-                const lastBlock = (await web3.eth.getBlockNumber()) - 4;
-                const lastBlockDB = await this.em.findOne(IndexerState, { name: "lastBlock" });
-                let lastEventBlock: number;
-                if (lastBlockDB) {
-                    lastEventBlock = lastBlockDB.lastBlock;
-                } else {
-                    lastEventBlock = lastBlock;
-                    const lbDB = new IndexerState("lastBlock", lastBlock);
-                    await this.em.persistAndFlush(lbDB);
-                }
-                if (lastEventBlock >= lastBlock) {
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                    continue;
-                }
-                //logger.info(`Reading events for from: ${lastEventBlock} to ${lastBlock.toString()}`);
-                for (let lastBlockRead = lastEventBlock; lastBlockRead <= lastBlock; lastBlockRead += blockReadOffset) {
-                    const allEvents = await this.readEventsFrom(
-                        bot.context.assetManager,
-                        lastBlockRead,
-                        Math.min(lastBlockRead + blockReadOffset - 1, lastBlock)
-                    );
-                    for (const e of allEvents) {
-                        const event = e as any;
-                        const am = this.assetManagerList.find((am) => am.assetManager === event.address);
-                        if (!am) {
-                            continue;
-                        }
-                        if (event.event === "AgentPingResponse") {
-                            const vaultAddress = event.args.agentVault;
-                            const agent = await this.em.findOne(Liveness, {
-                                vaultAddress: vaultAddress,
-                            });
-                            if (agent == null) {
-                                const agentLiveness = new Liveness(vaultAddress, am.fasset, timestamp, timestamp, false);
-                                await this.em.persistAndFlush(agentLiveness);
-                                continue;
-                            }
-                            agent.lastTimestamp = timestamp;
-                            await this.em.persistAndFlush(agent);
-                        } else {
-                            if (event.event === "CollateralReserved") {
-                                if (event.args.executor != this.executor) {
-                                    continue;
-                                }
-                                const count = await this.em.count(CollateralReservationEvent, {
-                                    txhash: event.transactionHash,
-                                    collateralReservationId: event.args.collateralReservationId,
-                                });
-                                if (count == 0) {
-                                    const crEvent = new CollateralReservationEvent(
-                                        event.args.collateralReservationId,
-                                        event.args.agentVault,
-                                        event.args.minter,
-                                        event.args.valueUBA,
-                                        event.args.feeUBA,
-                                        event.args.firstUnderlyingBlock,
-                                        event.args.lastUnderlyingBlock,
-                                        event.args.lastUnderlyingTimestamp,
-                                        event.args.paymentAddress,
-                                        event.args.paymentReference,
-                                        event.args.executor,
-                                        event.args.executorFeeNatWei,
-                                        timestamp,
-                                        event.transactionHash
-                                    );
-                                    await this.em.persistAndFlush(crEvent);
-                                }
-                                const mint = await this.em.count(Minting, {
-                                    txhash: event.transactionHash,
-                                    collateralReservationId: event.args.collateralReservationId,
-                                });
-                                if (mint == 0) {
-                                    const paymentAmount = toBN(event.args.valueUBA);
-                                    const amount = formatBNToDisplayDecimals(toBN(paymentAmount), am.fasset.includes("XRP") ? 2 : 8, am.decimals);
-                                    const time = new Date(timestamp + 7 * 24 * 60 * 60 * 1000);
-                                    const validUntil = time.getTime();
-                                    const tx = await this.em.findOne(UnderlyingPayment, {
-                                        paymentReference: event.args.paymentReference,
-                                    });
-                                    const minting = new Minting(
-                                        event.args.collateralReservationId,
-                                        tx ? tx.underlyingHash : null,
-                                        event.args.paymentAddress,
-                                        event.args.minter,
-                                        false,
-                                        validUntil,
-                                        false,
-                                        am.fasset,
-                                        event.args.minter,
-                                        amount,
-                                        timestamp,
-                                        event.args.agentVault,
-                                        event.args.paymentReference
-                                    );
-                                    await this.em.persistAndFlush(minting);
-                                }
-                            } else {
-                                if (event.event === "RedemptionRequested") {
-                                    if (event.args.executor != this.executor) {
-                                        continue;
-                                    }
-                                    const count = await this.em.count(RedemptionRequested, {
-                                        txhash: event.transactionHash,
-                                        requestId: event.args.requestId,
-                                    });
-                                    if (count != 0) {
-                                        continue;
-                                    }
-                                    const redemptionRequestedEvent = new RedemptionRequested(
-                                        event.args.agentVault,
-                                        event.args.redeemer,
-                                        event.args.requestId,
-                                        event.args.paymentAddress,
-                                        event.args.valueUBA,
-                                        event.args.feeUBA,
-                                        event.args.firstUnderlyingBlock,
-                                        event.args.lastUnderlyingBlock,
-                                        event.args.lastUnderlyingTimestamp,
-                                        event.args.paymentReference,
-                                        timestamp,
-                                        event.transactionHash,
-                                        am.fasset
-                                    );
-                                    await this.em.persistAndFlush(redemptionRequestedEvent);
-                                    const red = await this.em.count(Redemption, {
-                                        txhash: event.transactionHash,
-                                        requestId: event.args.requestId,
-                                    });
-                                    if (red == 0) {
-                                        const amountUBA = toBN(event.args.valueUBA).sub(toBN(event.args.feeUBA));
-                                        const time = new Date(timestamp + 7 * 24 * 60 * 60 * 1000);
-                                        const validUntil = time.getTime();
-                                        const redemption = new Redemption(
-                                            event.transactionHash,
-                                            false,
-                                            event.args.paymentAddress,
-                                            event.args.paymentReference,
-                                            amountUBA.toString(),
-                                            event.args.firstUnderlyingBlock,
-                                            event.args.lastUnderlyingBlock,
-                                            event.args.lastUnderlyingTimestamp,
-                                            event.args.requestId,
-                                            validUntil,
-                                            am.fasset,
-                                            timestamp
-                                        );
-                                        await this.em.persistAndFlush(redemption);
-                                    }
-                                } else {
-                                    if (event.event == "RedemptionDefault") {
-                                        const redemptionDefaultEvent = new RedemptionDefaultEvent(
-                                            event.args.agentVault,
-                                            event.args.redeemer,
-                                            event.args.requestId,
-                                            event.args.redemptionAmountUBA,
-                                            event.args.redeemedVaultCollateralWei,
-                                            event.args.redeemedPoolCollateralWei,
-                                            timestamp,
-                                            event.transactionHash
-                                        );
-                                        await this.em.persistAndFlush(redemptionDefaultEvent);
-                                    } else {
-                                        if (event.event == "RedemptionRequestIncomplete") {
-                                            const redemptionIncompleteEvent = new IncompleteRedemption(
-                                                event.transactionHash,
-                                                event.args.redeemer,
-                                                event.args.remainingLots,
-                                                timestamp
-                                            );
-                                            await this.em.persistAndFlush(redemptionIncompleteEvent);
-                                        } else {
-                                            if (event.event == "MintingPaymentDefault") {
-                                                const mintingDefault = new MintingDefaultEvent(
-                                                    event.args.agentVault,
-                                                    event.args.minter,
-                                                    event.args.collateralReservationId,
-                                                    event.args.reservedAmountUBA,
-                                                    timestamp,
-                                                    event.transactionHash
-                                                );
-                                                await this.em.persistAndFlush(mintingDefault);
-                                            } else {
-                                                if (event.event == "RedemptionPaymentBlocked") {
-                                                    const redemptionBlocked = new RedemptionBlocked(
-                                                        event.args.agentVault,
-                                                        event.args.redeemer,
-                                                        event.args.requestId,
-                                                        event.args.transactionHash,
-                                                        event.args.redemptionAmountUBA,
-                                                        event.args.spentUnderlyingUBA,
-                                                        timestamp,
-                                                        event.transactionHash
-                                                    );
-                                                    await this.em.persistAndFlush(redemptionBlocked);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                //this.lastEventBlockMap.set(fasset, lastBlock);
-                //this.lastEventBlock = lastBlock + 1;
-                if (!lastBlockDB) {
-                    const lbDB = new IndexerState("lastBlock", lastBlock + 1);
-                    await this.em.persistAndFlush(lbDB);
-                } else {
-                    lastBlockDB.lastBlock = lastBlock + 1;
-                    await this.em.persistAndFlush(lastBlockDB);
-                }
-                //logger.info(`Finish reading events.`);
-            } catch (error) {
-                logger.error(`'Error in event reader:`, error);
-            }
-        }
-    }
-
-    async getPastLogsFromAssetManagers(fromBlock: BlockNumber, toBlock: BlockNumber, topics: string[]): Promise<Log[]> {
-        const logs = await web3.eth.getPastLogs({
-            address: this.assetManagerAddressList,
-            fromBlock: fromBlock,
-            toBlock: toBlock,
-            topics: [topics],
-        });
-        return logs;
-    }
-
-    async readEventsFrom(contract: Truffle.ContractInstance, fromBlock: BlockNumber, toBlock: BlockNumber): Promise<EvmEvent[]> {
-        const eventDecoder = new Web3ContractEventDecoder({ contract });
-        const allLogs = await this.getPastLogsFromAssetManagers(fromBlock, toBlock, this.eventTopics);
-        return eventDecoder.decodeEvents(allLogs);
     }
 
     async getPools(): Promise<void> {
@@ -880,30 +382,16 @@ export class BotService implements OnModuleInit {
                     const mintFee = Number(info.feeBIPS) / MAX_BIPS;
                     const mintingPoolCR = Number(info.mintingPoolCollateralRatioBIPS) / MAX_BIPS;
                     const mintingVaultCR = Number(info.mintingVaultCollateralRatioBIPS) / MAX_BIPS;
-                    const existingPrice = prices.find((p) => p.symbol === vaultCollateralType.tokenFtsoSymbol);
-                    let totalVaultCollateralUSD = toBN(0);
-                    let totalPoolCollateralUSD = toBN(0);
-                    if (existingPrice) {
-                        totalVaultCollateralUSD = toBN(info.totalVaultCollateralWei)
-                            .mul(existingPrice.price)
-                            .div(toBNExp(1, Number(vaultCollateralType.decimals) + existingPrice.decimals));
-                        totalPoolCollateralUSD = toBN(info.totalPoolCollateralNATWei)
-                            .mul(priceUSD)
-                            .div(toBNExp(1, 18 + Number(cflrPrice.decimals)));
-                    } else {
+                    let existingPrice = prices.find((p) => p.symbol === vaultCollateralType.tokenFtsoSymbol);
+                    if (!existingPrice) {
                         const priceVault = await priceReader.getPrice(vaultCollateralType.tokenFtsoSymbol, false, settings.maxTrustedPriceAgeSeconds);
                         const priceVaultUSD = priceVault.price.mul(toBNExp(1, 18));
-                        totalVaultCollateralUSD = toBN(info.totalVaultCollateralWei)
-                            .mul(priceVaultUSD)
-                            .div(toBNExp(1, Number(vaultCollateralType.decimals) + Number(priceVault.decimals)));
-                        totalPoolCollateralUSD = toBN(info.totalPoolCollateralNATWei)
-                            .mul(priceUSD)
-                            .div(toBNExp(1, 18 + Number(cflrPrice.decimals)));
-                        prices.push({
+                        existingPrice = {
                             symbol: vaultCollateralType.tokenFtsoSymbol,
                             price: priceVaultUSD,
                             decimals: Number(priceVault.decimals),
-                        });
+                        };
+                        prices.push(existingPrice);
                     }
                     const totalPoolCollateral = formatFixed(toBN(info.totalPoolCollateralNATWei), 18, { decimals: 3, groupDigits: true, groupSeparator: "," });
                     tvlpoolsnat = sumUsdStrings(tvlpoolsnat, totalPoolCollateral);
@@ -912,30 +400,17 @@ export class BotService implements OnModuleInit {
                         groupDigits: true,
                         groupSeparator: ",",
                     });
-                    const poolOnlyCollateralUSD = formatFixed(totalPoolCollateralUSD, 18, {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
-                    const vaultOnlyCollateralUSD = formatFixed(totalVaultCollateralUSD, 18, {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
-                    const totalCollateralUSD = formatFixed(totalVaultCollateralUSD.add(totalPoolCollateralUSD), 18, {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
-                    totalCollateral = sumUsdStrings(totalCollateral, totalCollateralUSD);
-                    currentTVL = sumUsdStrings(
-                        currentTVL,
-                        formatFixed(totalPoolCollateralUSD, 18, {
-                            decimals: 3,
-                            groupDigits: true,
-                            groupSeparator: ",",
-                        })
+                    const poolOnlyCollateralUSD = calculateUSDValue(toBN(info.totalPoolCollateralNATWei), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
+                    const vaultOnlyCollateralUSD = calculateUSDValue(
+                        toBN(info.totalVaultCollateralWei),
+                        existingPrice.price,
+                        Number(vaultCollateralType.decimals) + existingPrice.decimals,
+                        18,
+                        3
                     );
+                    const totalCollateralUSD = sumUsdStrings(poolOnlyCollateralUSD, vaultOnlyCollateralUSD);
+                    totalCollateral = sumUsdStrings(totalCollateral, totalCollateralUSD);
+                    currentTVL = sumUsdStrings(currentTVL, poolOnlyCollateralUSD);
                     const poolNatBalance = toBN(await pool.totalCollateral());
                     const totalSupply = toBN(await poolToken.totalSupply());
                     const agentPoolCollateral =
@@ -944,14 +419,7 @@ export class BotService implements OnModuleInit {
                             : toBN(await poolToken.balanceOf(agent))
                                   .mul(poolNatBalance)
                                   .div(totalSupply);
-                    const agentPoolCollateralUSD = toBN(agentPoolCollateral)
-                        .mul(priceUSD)
-                        .div(toBNExp(1, 18 + Number(cflrPrice.decimals)));
-                    const agentPoolCollateralUSDFormatted = formatFixed(agentPoolCollateralUSD, 18, {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
+                    const agentPoolCollateralUSDFormatted = calculateUSDValue(toBN(agentPoolCollateral), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
                     agentPoolCollateralOnly = sumUsdStrings(agentPoolCollateralOnly, agentPoolCollateralUSDFormatted);
                     agentPoolCollateralOnly = sumUsdStrings(agentPoolCollateralOnly, vaultOnlyCollateralUSD);
                     //Check if in liq
@@ -960,45 +428,31 @@ export class BotService implements OnModuleInit {
                     }
                     //infoBot.context.
                     //TODO change so price calculation works
-                    let mintedUSD;
-                    let remainingUSD;
-                    let remainingUSDFormatted;
                     const remainingAssets = Number(info.freeCollateralLots) * lotSize;
-                    const existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
-                    if (existingPriceAsset) {
-                        mintedUSD = toBN(info.mintedUBA).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-                        remainingUSD = toBN(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals)))
-                            .mul(existingPriceAsset.price)
-                            .div(toBNExp(1, Number(settings.assetDecimals)));
-                        remainingUSDFormatted = formatFixed(remainingUSD, existingPriceAsset.decimals, {
-                            decimals: 3,
-                            groupDigits: true,
-                            groupSeparator: ",",
-                        });
-                    } else {
+                    let existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+                    if (!existingPriceAsset) {
                         const priceAsset = await priceReader.getPrice(this.fassetSymbol.get(fasset), false, settings.maxTrustedPriceAgeSeconds);
-                        prices.push({
+                        existingPriceAsset = {
                             symbol: this.fassetSymbol.get(fasset),
                             price: priceAsset.price,
                             decimals: Number(priceAsset.decimals),
-                        });
-                        mintedUSD = toBN(info.mintedUBA)
-                            .mul(priceAsset.price)
-                            .div(toBNExp(1, Number(priceAsset.decimals)));
-                        remainingUSD = toBN(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals)))
-                            .mul(priceAsset.price)
-                            .div(toBNExp(1, Number(settings.assetDecimals)));
-                        remainingUSDFormatted = formatFixed(remainingUSD, Number(priceAsset.decimals), {
-                            decimals: 3,
-                            groupDigits: true,
-                            groupSeparator: ",",
-                        });
+                        };
+                        prices.push(existingPriceAsset);
                     }
-                    const mintedUSDFormatted = formatFixed(mintedUSD, Number(settings.assetDecimals), {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
+                    const remainingUSDFormatted = calculateUSDValue(
+                        toBN(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals))),
+                        existingPriceAsset.price,
+                        existingPriceAsset.decimals,
+                        Number(settings.assetDecimals),
+                        3
+                    );
+                    const mintedUSDFormatted = calculateUSDValue(
+                        toBN(info.mintedUBA),
+                        existingPriceAsset.price,
+                        existingPriceAsset.decimals,
+                        Number(settings.assetDecimals),
+                        3
+                    );
                     mintedAll = sumUsdStrings(mintedAll, mintedUSDFormatted);
                     const mintedReservedLots = toBN(info.mintedUBA).add(toBN(info.reservedUBA)).div(lotSizeUBA);
                     const mintedAssets = formatFixed(toBN(info.mintedUBA), Number(settings.assetDecimals), {
@@ -1042,11 +496,6 @@ export class BotService implements OnModuleInit {
                     } else {
                         supplyCollateral.push({ symbol: vaultCollateralType.tokenFtsoSymbol, supply: vaultCollateral, supplyUSD: vaultOnlyCollateralUSD });
                     }
-
-                    /*const priceUnderlyingAsset = await priceReader.getPrice(asset, false, settings.maxTrustedPriceAgeSeconds);
-                    const priceMul = price.price.mul(toBNExp(1, 18));
-                    const mintedUBA = info.mintedUBA;
-                    const remainingUSD = info.freeCollateralLots.muln(formattedLotSize)*/
                     numLiq = numLiq + Number(numLiquidations);
                     numMints = numMints + Number(mintCount);
                     const agentPool = new Pool(
@@ -1168,57 +617,30 @@ export class BotService implements OnModuleInit {
                     const mintingPoolCR = Number(info.mintingPoolCollateralRatioBIPS) / MAX_BIPS;
                     const mintingVaultCR = Number(info.mintingVaultCollateralRatioBIPS) / MAX_BIPS;
 
-                    const existingPrice = prices.find((p) => p.symbol === vaultCollateralType.tokenFtsoSymbol);
-                    let totalVaultCollateralUSD = toBN(0);
-                    let totalPoolCollateralUSD = toBN(0);
+                    let existingPrice = prices.find((p) => p.symbol === vaultCollateralType.tokenFtsoSymbol);
 
-                    if (existingPrice) {
-                        totalVaultCollateralUSD = toBN(info.totalVaultCollateralWei)
-                            .mul(existingPrice.price)
-                            .div(toBNExp(1, Number(vaultCollateralType.decimals) + existingPrice.decimals));
-                        totalPoolCollateralUSD = toBN(info.totalPoolCollateralNATWei)
-                            .mul(priceUSD)
-                            .div(toBNExp(1, 18 + Number(cflrPrice.decimals)));
-                    } else {
+                    if (!existingPrice) {
                         const priceVault = await priceReader.getPrice(vaultCollateralType.tokenFtsoSymbol, false, settings.maxTrustedPriceAgeSeconds);
                         const priceVaultUSD = priceVault.price.mul(toBNExp(1, 18));
-                        totalVaultCollateralUSD = toBN(info.totalVaultCollateralWei)
-                            .mul(priceVaultUSD)
-                            .div(toBNExp(1, Number(vaultCollateralType.decimals) + Number(priceVault.decimals)));
-                        totalPoolCollateralUSD = toBN(info.totalPoolCollateralNATWei)
-                            .mul(priceUSD)
-                            .div(toBNExp(1, 18 + Number(cflrPrice.decimals)));
-                        prices.push({
+                        existingPrice = {
                             symbol: vaultCollateralType.tokenFtsoSymbol,
                             price: priceVaultUSD,
                             decimals: Number(priceVault.decimals),
-                        });
+                        };
+                        prices.push(existingPrice);
                     }
-                    const poolOnlyCollateralUSD = formatFixed(totalPoolCollateralUSD, 18, {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
-                    const vaultOnlyCollateralUSD = formatFixed(totalVaultCollateralUSD, 18, {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
-                    const totalCollateralUSD = formatFixed(totalVaultCollateralUSD.add(totalPoolCollateralUSD), 18, {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
+                    const poolOnlyCollateralUSD = calculateUSDValue(toBN(info.totalPoolCollateralNATWei), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
+                    const vaultOnlyCollateralUSD = calculateUSDValue(
+                        toBN(info.totalVaultCollateralWei),
+                        existingPrice.price,
+                        Number(vaultCollateralType.decimals) + existingPrice.decimals,
+                        18,
+                        3
+                    );
+                    const totalCollateralUSD = sumUsdStrings(poolOnlyCollateralUSD, vaultOnlyCollateralUSD);
                     totalCollateral = sumUsdStrings(totalCollateral, totalCollateralUSD);
                     tvlpoolsnat = sumUsdStrings(tvlpoolsnat, totalPoolCollateral);
-                    currentTVL = sumUsdStrings(
-                        currentTVL,
-                        formatFixed(totalPoolCollateralUSD, 18, {
-                            decimals: 3,
-                            groupDigits: true,
-                            groupSeparator: ",",
-                        })
-                    );
+                    currentTVL = sumUsdStrings(currentTVL, poolOnlyCollateralUSD);
                     const poolToken = await IERC20.at(await pool.poolToken());
                     const poolNatBalance = toBN(await pool.totalCollateral());
                     const totalSupply = toBN(await poolToken.totalSupply());
@@ -1228,61 +650,38 @@ export class BotService implements OnModuleInit {
                             : toBN(await poolToken.balanceOf(agent.vaultAddress))
                                   .mul(poolNatBalance)
                                   .div(totalSupply);
-                    const agentPoolCollateralUSD = toBN(agentPoolCollateral)
-                        .mul(priceUSD)
-                        .div(toBNExp(1, 18 + Number(cflrPrice.decimals)));
-                    const agentPoolCollateralUSDFormatted = formatFixed(agentPoolCollateralUSD, 18, {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
+                    const agentPoolCollateralUSDFormatted = calculateUSDValue(toBN(agentPoolCollateral), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
                     agentPoolCollateralOnly = sumUsdStrings(agentPoolCollateralOnly, agentPoolCollateralUSDFormatted);
                     agentPoolCollateralOnly = sumUsdStrings(agentPoolCollateralOnly, vaultOnlyCollateralUSD);
                     //Check liq
                     if (Number(info.status) == 2 || Number(info.status) == 3) {
                         agentsLiq++;
                     }
-                    //infoBot.context.
-                    //TODO change so price calculation works
-                    let mintedUSD;
-                    let remainingUSD;
-                    let remainingUSDFormatted;
                     const remainingAssets = Number(info.freeCollateralLots) * lotSize;
-                    const existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
-                    if (existingPriceAsset) {
-                        mintedUSD = toBN(info.mintedUBA).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-                        remainingUSD = toBN(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals)))
-                            .mul(existingPriceAsset.price)
-                            .div(toBNExp(1, Number(settings.assetDecimals)));
-                        remainingUSDFormatted = formatFixed(remainingUSD, existingPriceAsset.decimals, {
-                            decimals: 3,
-                            groupDigits: true,
-                            groupSeparator: ",",
-                        });
-                    } else {
+                    let existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
+                    if (!existingPriceAsset) {
                         const priceAsset = await priceReader.getPrice(this.fassetSymbol.get(fasset), false, settings.maxTrustedPriceAgeSeconds);
-                        prices.push({
+                        existingPriceAsset = {
                             symbol: this.fassetSymbol.get(fasset),
                             price: priceAsset.price,
                             decimals: Number(priceAsset.decimals),
-                        });
-                        mintedUSD = toBN(info.mintedUBA)
-                            .mul(priceAsset.price)
-                            .div(toBNExp(1, Number(priceAsset.decimals)));
-                        remainingUSD = toBN(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals)))
-                            .mul(priceAsset.price)
-                            .div(toBNExp(1, Number(settings.assetDecimals)));
-                        remainingUSDFormatted = formatFixed(remainingUSD, Number(priceAsset.decimals), {
-                            decimals: 3,
-                            groupDigits: true,
-                            groupSeparator: ",",
-                        });
+                        };
+                        prices.push(existingPriceAsset);
                     }
-                    const mintedUSDFormatted = formatFixed(mintedUSD, Number(settings.assetDecimals), {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
+                    const remainingUSDFormatted = calculateUSDValue(
+                        toBN(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals))),
+                        existingPriceAsset.price,
+                        existingPriceAsset.decimals,
+                        Number(settings.assetDecimals),
+                        3
+                    );
+                    const mintedUSDFormatted = calculateUSDValue(
+                        toBN(info.mintedUBA),
+                        existingPriceAsset.price,
+                        existingPriceAsset.decimals,
+                        Number(settings.assetDecimals),
+                        3
+                    );
                     mintedAll = sumUsdStrings(mintedAll, mintedUSDFormatted);
                     const mintedReservedLots = toBN(info.mintedUBA).add(toBN(info.reservedUBA)).div(lotSizeUBA);
                     const mintedAssets = formatFixed(toBN(info.mintedUBA), Number(settings.assetDecimals), {
@@ -1390,17 +789,13 @@ export class BotService implements OnModuleInit {
                     });
                     existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
                 }
-                const availableToMintUSD =
-                    Number(availableLotsCap) == 0
-                        ? toBN(0)
-                        : toBN(Math.min(availableToMintUBA.toNumber(), freeLotsUBA.toNumber()))
-                              .mul(existingPriceAsset.price)
-                              .div(toBNExp(1, Number(existingPriceAsset.decimals)));
-                const availableToMintUSDFormatted = formatFixed(availableToMintUSD, Number(settings.assetDecimals), {
-                    decimals: 3,
-                    groupDigits: true,
-                    groupSeparator: ",",
-                });
+                const availableToMintUSDFormatted = calculateUSDValue(
+                    Number(availableLotsCap) == 0 ? toBN(0) : toBN(Math.min(availableToMintUBA.toNumber(), freeLotsUBA.toNumber())),
+                    existingPriceAsset.price,
+                    existingPriceAsset.decimals,
+                    Number(settings.assetDecimals),
+                    3
+                );
                 supplyFa.availableToMintUSD = availableToMintUSDFormatted;
                 supplyFa.allLots = mintedLots.toNumber() + Number(availableLotsCap);
                 const mintingCapUSD = toBN(mintingCap)
@@ -1488,14 +883,13 @@ export class BotService implements OnModuleInit {
                 groupDigits: true,
                 groupSeparator: ",",
             });
-            const rewardsAssetUSD = toBN(rewards?.value ?? "0")
-                .mul(existingPriceAsset.price)
-                .div(toBNExp(1, existingPriceAsset.decimals));
-            const rewardsAssetUSDFormatted = formatFixed(rewardsAssetUSD, Number(settings.assetDecimals), {
-                decimals: 3,
-                groupDigits: true,
-                groupSeparator: ",",
-            });
+            const rewardsAssetUSDFormatted = calculateUSDValue(
+                toBN(rewards?.value ?? "0"),
+                existingPriceAsset.price,
+                existingPriceAsset.decimals,
+                Number(settings.assetDecimals),
+                3
+            );
             poolPaid.push({ fasset: fasset, rewards: rewardsAsset, rewardsUSD: rewardsAssetUSDFormatted });
             totalPoolPaidUSD = sumUsdStrings(totalPoolPaidUSD, rewardsAssetUSDFormatted);
 
@@ -1529,20 +923,15 @@ export class BotService implements OnModuleInit {
                     groupSeparator: ",",
                 });
                 const cvTotal = toBN(coreVaultInflows).sub(toBN(coreVaultOutflows));
-                const cvTotalUSD = toBN(cvTotal).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-                const cvTotalUSDFormatted = formatFixed(cvTotalUSD, Number(settings.assetDecimals), {
-                    decimals: 2,
-                    groupDigits: true,
-                    groupSeparator: ",",
-                });
+                const cvTotalUSDFormatted = calculateUSDValue(
+                    toBN(cvTotal),
+                    existingPriceAsset.price,
+                    existingPriceAsset.decimals,
+                    Number(settings.assetDecimals),
+                    2
+                );
                 this.coreVaultSupply = formatFixed(cvTotal, 6, { decimals: 2, groupDigits: true, groupSeparator: "," });
                 this.coreVaultSupplyUSD = cvTotalUSDFormatted;
-                // Proof of reserve calculation
-                //const cvAmount = await infoBot.context.assetManager.coreVaultAvailableAmount();
-                //const cvRequestedAmount = await infoBot.context.coreVaultManager.totalRequestAmountWithFee();
-                /*const totalReserve = toBN((await this.externalApiService.getCVBacking())["FXRP"].value)
-                    .add(toBN(cvAmount[1]))
-                    .add(toBN(cvRequestedAmount));*/
                 const now = Math.floor(Date.now() / 1000);
                 const proofOfReserveNow = await this.externalApiService.getCVratio("timestamps=" + now);
                 let porRatioNow = proofOfReserveNow["FXRP"][0].value;
@@ -1551,12 +940,13 @@ export class BotService implements OnModuleInit {
                 }
                 const porRatioBN = toBNDecimal(porRatioNow, 10);
                 const totalReserve = faSupply.mul(porRatioBN).div(toBN("10000000000"));
-                const reserveUSD = totalReserve.mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-                const reserveUSDFormatted = formatFixed(reserveUSD, Number(settings.assetDecimals), {
-                    decimals: 2,
-                    groupDigits: true,
-                    groupSeparator: ",",
-                });
+                const reserveUSDFormatted = calculateUSDValue(
+                    totalReserve,
+                    existingPriceAsset.price,
+                    existingPriceAsset.decimals,
+                    Number(settings.assetDecimals),
+                    2
+                );
                 const ratio = faSupply.eqn(0) ? toBNExp(1, 10) : totalReserve.mul(toBNExp(1, 10)).div(faSupply).mul(toBN(100));
                 let ratioCalc = Number(ratio.toString()) / 1e10;
                 if (ratioCalc < 100) {
@@ -1584,12 +974,13 @@ export class BotService implements OnModuleInit {
                 if (!agent) {
                     continue;
                 }
-                const claimedUSD = toBN(tp.claimed).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-                const claimedUSDFormatted = formatFixed(claimedUSD, Number(settings.assetDecimals), {
-                    decimals: 3,
-                    groupDigits: true,
-                    groupSeparator: ",",
-                });
+                const claimedUSDFormatted = calculateUSDValue(
+                    toBN(tp.claimed),
+                    existingPriceAsset.price,
+                    existingPriceAsset.decimals,
+                    Number(settings.assetDecimals),
+                    3
+                );
                 bestPools.push({
                     name: agent.agentName,
                     vaultAddress: agent.vaultAddress,
@@ -1702,6 +1093,9 @@ export class BotService implements OnModuleInit {
 
     async getTimeSeries(time: string): Promise<any> {
         const data: TimeData = await this.cacheManager.get(time + "Data");
+        if (!data) {
+            return getDefaultTimeData(this.fassetList[0]);
+        }
         return data;
     }
 

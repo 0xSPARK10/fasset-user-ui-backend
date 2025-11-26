@@ -76,6 +76,7 @@ export class HistoryService {
                         destinationAddress: crData.paymentAddress,
                         amount: toBN(crData.valueUBA).add(toBN(crData.feeUBA)).toString(),
                         agentName: agentName ? agentName.agentName : "FlareAgent",
+                        lastUnderlyingBlock: crData.lastUnderlyingBlock,
                     };
                 }
                 if (underlyingPayment) {
@@ -90,7 +91,7 @@ export class HistoryService {
                 amount: mint.amount,
                 fasset: mint.fasset,
                 status: mint.processed,
-                txhash: mintTxhash,
+                txhash: isDefaulted ? "Collateral was reserved but XRP deposit is missing." : mintTxhash,
                 defaulted: isDefaulted,
                 missingUnderlying: missingUnderlying,
                 underlyingTransactionData: underlyingTransactionData,

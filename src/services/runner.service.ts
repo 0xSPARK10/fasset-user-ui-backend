@@ -13,9 +13,6 @@ import { dateStringToTimestamp, formatBNToDisplayDecimals, timestampToDateString
 import { Injectable, OnApplicationBootstrap } from "@nestjs/common";
 import { RedeemData, RedemptionDefaultEvent } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
-import { TX_BLOCKED, TX_FAILED, TX_SUCCESS, TxInputOutput } from "@flarelabs/fasset-bots-core";
-import { BTC_MDU } from "@flarelabs/fasset-bots-core";
-import BN from "bn.js";
 import { Pool } from "src/entities/Pool";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
 import { AttestationNotProved } from "@flarelabs/fasset-bots-core";
@@ -308,6 +305,10 @@ export class RunnerService implements OnApplicationBootstrap {
                                     minting.processed = true;
                                     await this.em.persistAndFlush(minting);
                                 }
+                                if (errorIncluded(error, ["PaymentFailed"])) {
+                                    minting.processed = true;
+                                    await this.em.persistAndFlush(minting);
+                                }
                                 continue;
                             }
                         } else {
@@ -555,19 +556,6 @@ export class RunnerService implements OnApplicationBootstrap {
         const agent = await this.em.find(Pool, {
             vaultAddress: event.agentVault,
         });
-        /*const collateral = await this.em.find(Collateral, {
-      token: agent[0].vaultToken,
-    });*/
-        /*const vaultCollateralRedeemed = formatBNToDisplayDecimals(
-      toBN(event.redeemedVaultCollateralWei),
-      agent[0].vaultCollateralToken == "testETH" ? 6 : 3,
-      collateral[0].decimals,
-    );
-    const poolCollateralRedeemed = formatBNToDisplayDecimals(
-      toBN(event.redeemedPoolCollateralWei),
-      3,
-      18,
-    );*/
         const value = formatBNToDisplayDecimals(toBN(redemption.amountUBA), fasset.includes("XRP") ? 2 : 8, fasset.includes("XRP") ? 6 : 8);
         const defEvent = new RedemptionDefault(
             redemption.txhash,
@@ -596,116 +584,6 @@ export class RunnerService implements OnApplicationBootstrap {
         } else {
             return RedemptionStatus.PENDING;
         }
-    }
-
-    /*async getTransactionsByReference(reference: string, from: number, bot: UserBotCommands): Promise<ITransaction[] | []> {
-        const txs = await retry(this.getTransactionsByReferenceFromIndexer.bind(this), [bot, reference, from], DEFAULT_RETRIES);
-        //logger.info(`Block chain indexer helper: retrieved transactions by reference ${reference}: ${formatArgs(txs)}`);
-        return txs;
-    }*/
-
-    private async handleInputsOutputs(bot: UserBotCommands, data: any, input: boolean): Promise<TxInputOutput[]> {
-        const type = data.transactionType;
-        const res = data.response;
-        switch (bot.context.blockchainIndexer.chainId) {
-            case ChainId.BTC:
-            case ChainId.DOGE:
-            case ChainId.testBTC:
-            case ChainId.testDOGE:
-                return await this.UTXOInputsOutputs(type, res, input);
-            case ChainId.XRP:
-            case ChainId.testXRP:
-                return this.XRPInputsOutputs(bot, data, input);
-            default:
-                logger.error(`Block chain indexer helper error: invalid SourceId: ${bot.context.blockchainIndexer.chainId}`);
-                throw new Error(`Invalid SourceId: ${bot.context.blockchainIndexer.chainId}.`);
-        }
-    }
-
-    private toBnValue(value: number | undefined): BN {
-        if (value === undefined) {
-            return toBN(0);
-        }
-        return toBN(Math.round(value * BTC_MDU).toFixed(0));
-    }
-
-    private async UTXOInputsOutputs(type: string, data: any, input: boolean): Promise<TxInputOutput[]> {
-        if (input) {
-            if (type === "coinbase") {
-                return [["", toBN(0)]];
-            } else {
-                const inputs: TxInputOutput[] = [];
-                data.vin.map((vin: any) => {
-                    const address = vin.prevout && vin.prevout.scriptPubKey.address ? vin.prevout.scriptPubKey.address : "";
-                    const value = this.toBnValue(vin.prevout?.value || 0);
-                    inputs.push([address, value]);
-                });
-                if (inputs.length == 0) return [["", toBN(0)]];
-                return inputs;
-            }
-        } else {
-            const outputs: TxInputOutput[] = [];
-            data.vout.map((vout: any) => {
-                outputs.push([vout.scriptPubKey.address, this.toBnValue(vout.value)]);
-            });
-            if (outputs.length == 0) return [["", toBN(0)]];
-            return outputs;
-        }
-    }
-
-    private XRPInputsOutputs(bot: UserBotCommands, data: any, input: boolean): TxInputOutput[] {
-        const response = data.response.result;
-        if (input) {
-            if (data.isNativePayment) {
-                return [[response.Account, toBN(response.Amount as any).add(toBN(response.Fee ? response.Fee : 0))]];
-            }
-            return [[response.Account, response.Fee ? toBN(response.Fee) : toBN(0)]];
-        } else {
-            if (data.isNativePayment && this.successStatus(bot, data) === TX_SUCCESS) {
-                /* istanbul ignore next */
-                const metaData = response.meta || (response as any).metaData;
-                return [[response.Destination, toBN(metaData.delivered_amount as string)]];
-            }
-            return [["", toBN(0)]];
-        }
-    }
-    private isUTXOchain(bot: UserBotCommands): boolean {
-        return (
-            bot.context.blockchainIndexer.chainId === ChainId.testBTC ||
-            bot.context.blockchainIndexer.chainId === ChainId.testDOGE ||
-            bot.context.blockchainIndexer.chainId === ChainId.LTC ||
-            bot.context.blockchainIndexer.chainId === ChainId.BTC ||
-            bot.context.blockchainIndexer.chainId === ChainId.DOGE
-        );
-    }
-
-    private successStatus(bot: UserBotCommands, data: any): number {
-        if (this.isUTXOchain(bot)) {
-            return TX_SUCCESS;
-        }
-        // https://xrpl.org/transaction-results.html
-        const response = data.response.result;
-        /* istanbul ignore next */
-        const metaData = response.meta || (response as any).metaData;
-        const result = metaData.TransactionResult;
-        if (result === "tesSUCCESS") {
-            // https://xrpl.org/tes-success.html
-            return TX_SUCCESS;
-        }
-        if (result.startsWith("tec")) {
-            // https://xrpl.org/tec-codes.html
-            switch (result) {
-                case "tecDST_TAG_NEEDED":
-                case "tecNO_DST":
-                case "tecNO_DST_INSUF_XRP":
-                case "tecNO_PERMISSION":
-                    return TX_BLOCKED;
-                default:
-                    return TX_FAILED;
-            }
-        }
-        // Other codes: tef, tel, tem, ter are not applied to ledgers
-        return TX_FAILED;
     }
 
     async findRedemptionPayment(bot: UserBotCommands, state: RedeemData) {

@@ -1,6 +1,8 @@
 import { BNish, toBN } from "@flarelabs/fasset-bots-core/utils";
 import BN from "bn.js";
-import { AMG_TOKENWEI_PRICE_SCALE, AMGSettings } from "@flarelabs/fasset-bots-core";
+import { AMG_TOKENWEI_PRICE_SCALE, AMGSettings, formatFixed, toBNExp } from "@flarelabs/fasset-bots-core";
+import { TimeData } from "src/interfaces/structure";
+import { TimeDataCV } from "src/interfaces/requestResponse";
 
 export async function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -108,4 +110,38 @@ export function isValidWalletAddress(address: string): boolean {
     if (xrpRegex.test(address)) return true;
 
     return false;
+}
+
+export function getDefaultTimeData(fasset: string): TimeData {
+    const now = Math.floor(Date.now() / 1000);
+    const defaultTimeData: TimeDataCV = {
+        supplyDiff: "0",
+        isPositiveSupplyDiff: true,
+        inflowGraph: [{ timestamp: now, value: "0" }],
+        outflowGraph: [{ timestamp: now, value: "0" }],
+        inflowDiff: "0",
+        isPositiveInflowDiff: true,
+        outflowDiff: "0",
+        isPositiveOutflowDiff: true,
+        tvlGraph: [{ timestamp: now, value: "0" }],
+    };
+    return {
+        supplyDiff: [{ fasset: fasset, diff: "0", isPositive: true }],
+        mintGraph: [{ timestamp: now, value: "0" }],
+        redeemGraph: [{ timestamp: now, value: "0" }],
+        bestPools: [],
+        totalCollateralDiff: "0",
+        isPositiveCollateralDiff: true,
+        coreVaultData: defaultTimeData,
+        proofOfReserve: [{ timestamp: now, value: "0" }],
+    };
+}
+
+export function calculateUSDValue(amount: BN, price: BN, priceDecimals: number, assetDecimals: number, formatDecimals: number): string {
+    const amountUSD = amount.mul(price).div(toBNExp(1, Number(priceDecimals)));
+    return formatFixed(amountUSD, Number(assetDecimals), {
+        decimals: formatDecimals,
+        groupDigits: true,
+        groupSeparator: ",",
+    });
 }

@@ -2,13 +2,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from "@nestjs/common";
 import { UTXOSLedger } from "../interfaces/requestResponse";
-import { toBN, web3 } from "@flarelabs/fasset-bots-core/utils";
+import { formatFixed, toBN, web3 } from "@flarelabs/fasset-bots-core/utils";
 import { LotsException } from "../exceptions/lots.exception";
 import { SelectedUTXO, SelectedUTXOAddress } from "src/interfaces/structure";
 import BN from "bn.js";
 import { ExternalApiService } from "./external.api.service";
 import { ConfigService } from "@nestjs/config";
 import { UserService } from "./user.service";
+import { logger } from "src/logger/winston.logger";
 
 const REMAIN_SATOSHIS = toBN(0);
 const MAX_SEQUENCE = 4294967295;
@@ -316,6 +317,32 @@ export class UtxoService {
             }
 
             return psbt.toBase64();
+        }
+    }
+
+    async getXpubBalance(fasset: string, address: string) {
+        try {
+            const balances = await this.externalApiService.getXpubBalanceBlockBook(fasset, address);
+            const balance = toBN(balances.balance);
+            if (fasset.includes("DOGE")) {
+                return {
+                    balance: formatFixed(toBN(balance), 8, {
+                        decimals: 2,
+                        groupDigits: true,
+                        groupSeparator: ",",
+                    }),
+                };
+            } else {
+                return {
+                    balance: formatFixed(toBN(balance), 8, {
+                        decimals: 8,
+                        groupDigits: true,
+                        groupSeparator: ",",
+                    }),
+                };
+            }
+        } catch (error) {
+            logger.error("Error in underlying balance xpub: ", error);
         }
     }
 }

@@ -10,7 +10,7 @@ import { Pool } from "../entities/Pool";
 import { Liveness } from "../entities/AgentLiveness";
 import { CollateralPrice } from "@flarelabs/fasset-bots-core";
 import { TokenPriceReader } from "@flarelabs/fasset-bots-core";
-import { formatBNToDisplayDecimals } from "src/utils/utils";
+import { calculateUSDValue, formatBNToDisplayDecimals } from "src/utils/utils";
 import { logger } from "src/logger/winston.logger";
 import { Collateral } from "src/entities/Collaterals";
 import { ExternalApiService } from "./external.api.service";
@@ -214,14 +214,13 @@ export class PoolService {
                                     fasset.includes("XRP") ? 3 : 8,
                                     Number(settings.assetDecimals)
                                 );
-                                const lifetimeClaimedPoolUSD = toBN(lifetimeClaimedPool)
-                                    .mul(priceAsset.price)
-                                    .div(toBNExp(1, Number(priceAsset.decimals)));
-                                const lifetimeClaimedPoolUSDFormatted = formatFixed(lifetimeClaimedPoolUSD, Number(settings.assetDecimals), {
-                                    decimals: 3,
-                                    groupDigits: true,
-                                    groupSeparator: ",",
-                                });
+                                const lifetimeClaimedPoolUSDFormatted = calculateUSDValue(
+                                    toBN(lifetimeClaimedPool),
+                                    priceAsset.price,
+                                    Number(priceAsset.decimals),
+                                    Number(settings.assetDecimals),
+                                    3
+                                );
                                 const agentPool = {
                                     vault: agent.vaultAddress,
                                     pool: agent.poolAddress,
@@ -286,12 +285,7 @@ export class PoolService {
                             const totalSupply = toBN(await poolToken.totalSupply()); // all issued collateral pool tokens
                             //If formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
                             const userPoolNatBalance = balanceFormated.toString() == "0" ? "0" : toBN(balance).mul(poolNatBalance).div(totalSupply);
-                            const feesUSD = fees.mul(priceAsset.price).div(toBNExp(1, Number(priceAsset.decimals)));
-                            const feesUSDFormatted = formatFixed(feesUSD, Number(settings.assetDecimals), {
-                                decimals: 3,
-                                groupDigits: true,
-                                groupSeparator: ",",
-                            });
+                            const feesUSDFormatted = calculateUSDValue(fees, priceAsset.price, Number(priceAsset.decimals), Number(settings.assetDecimals), 3);
                             const transferableTokens = await poolToken.transferableBalanceOf(address);
                             const nonTimeLocked = await poolToken.nonTimelockedBalanceOf(address);
                             const totalSupplyNum = Number(totalSupply.div(toBNExp(1, 18)));
@@ -318,14 +312,13 @@ export class PoolService {
                                 fasset.includes("XRP") ? 3 : 8,
                                 Number(settings.assetDecimals)
                             );
-                            const lifetimeClaimedPoolUSD = toBN(lifetimeClaimedPool)
-                                .mul(priceAsset.price)
-                                .div(toBNExp(1, Number(priceAsset.decimals)));
-                            const lifetimeClaimedPoolUSDFormatted = formatFixed(lifetimeClaimedPoolUSD, Number(settings.assetDecimals), {
-                                decimals: 3,
-                                groupDigits: true,
-                                groupSeparator: ",",
-                            });
+                            const lifetimeClaimedPoolUSDFormatted = calculateUSDValue(
+                                toBN(lifetimeClaimedPool),
+                                priceAsset.price,
+                                Number(priceAsset.decimals),
+                                Number(settings.assetDecimals),
+                                3
+                            );
                             const agentPool = {
                                 vault: agent.vaultAddress,
                                 pool: agent.poolAddress,
@@ -512,12 +505,7 @@ export class PoolService {
                     const settings = await bot.context.assetManager.getSettings();
                     const priceReader = await TokenPriceReader.create(settings);
                     const priceAsset = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
-                    const feesUSD = fees.mul(priceAsset.price).div(toBNExp(1, Number(priceAsset.decimals)));
-                    const feesUSDFormatted = formatFixed(feesUSD, Number(settings.assetDecimals), {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
+                    const feesUSDFormatted = calculateUSDValue(fees, priceAsset.price, Number(priceAsset.decimals), Number(settings.assetDecimals), 3);
                     const transferableTokens = await poolToken.transferableBalanceOf(address);
                     const nonTimeLocked = await poolToken.nonTimelockedBalanceOf(address);
                     //const fassetDebt = await pool.fAssetFeeDebtOf(address);
@@ -545,14 +533,13 @@ export class PoolService {
                         fasset.includes("XRP") ? 3 : 8,
                         Number(settings.assetDecimals)
                     );
-                    const lifetimeClaimedPoolUSD = toBN(lifetimeClaimedPool)
-                        .mul(priceAsset.price)
-                        .div(toBNExp(1, Number(priceAsset.decimals)));
-                    const lifetimeClaimedPoolUSDFormatted = formatFixed(lifetimeClaimedPoolUSD, Number(settings.assetDecimals), {
-                        decimals: 3,
-                        groupDigits: true,
-                        groupSeparator: ",",
-                    });
+                    const lifetimeClaimedPoolUSDFormatted = calculateUSDValue(
+                        toBN(lifetimeClaimedPool),
+                        priceAsset.price,
+                        Number(priceAsset.decimals),
+                        Number(settings.assetDecimals),
+                        3
+                    );
                     const agentPool = {
                         vault: agent.vaultAddress,
                         pool: agent.poolAddress,
