@@ -53,17 +53,25 @@ export function isEmptyObject(obj: unknown): boolean {
 }
 
 export function calculatePoolRewardsDiff(rewards: any): PoolCollateralDiff {
-    //TODO fix test, production
-    const diff = Number(rewards[1].value) - Number(rewards[0].value);
-    const percentage = Number(rewards[0].value) == 0 ? 100 : (diff / Number(rewards[0].value)) * 100;
-    return { diff: Math.abs(percentage).toFixed(2), isPositive: diff >= 0 };
+    const v0 = BigInt(rewards[0].value);
+    const v1 = BigInt(rewards[1].value);
+    const diff = v1 - v0;
+    const percentage = v0 === 0n ? 100 : Number((diff * 10000n) / v0) / 100;
+    return {
+        diff: percentage.toFixed(2),
+        isPositive: diff >= 0n,
+    };
 }
 
 export function calculatePoolCollateralDiff(rewards: FassetTimeSupply[]): PoolCollateralDiff {
-    //TODO fix test, production
-    const diff = Number(rewards[1].value) / 10 ** 18 - Number(rewards[0].value) / 10 ** 18;
-    const percentage = Number(rewards[0].value) == 0 ? 100 : (diff / (Number(rewards[0].value) / 10 ** 18)) * 100;
-    return { diff: Math.abs(percentage).toFixed(2), isPositive: diff >= 0 };
+    const v0 = BigInt(rewards[0].value);
+    const v1 = BigInt(rewards[1].value);
+    const diff = v1 - v0;
+    const percentage = v0 === 0n ? 100 : Number((diff * 10000n) / v0) / 100;
+    return {
+        diff: percentage.toFixed(2),
+        isPositive: diff >= 0n,
+    };
 }
 
 export function formatTimeSeries(data: TimeSeriesIndexer[]): TimeSeries[] {

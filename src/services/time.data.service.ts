@@ -82,13 +82,13 @@ export class TimeDataService {
                 const collateralPoolDiff = await this.externalApiService.getPoolCollateralDiff(dayTimestamp.toString(), now.toString(), p.poolAddress);
                 const diffTvl = calculatePoolCollateralDiff(collateralPoolDiff);
                 let diffRewards;
-                if (Object.keys(collectedPoolFees).length === 0) {
+                if (collectedPoolFees[netw.real].length === 0) {
                     diffRewards = calculatePoolRewardsDiff([
                         { timestamp: 123, value: "0" },
                         { timestamp: 1234, value: "0" },
                     ]);
                 } else {
-                    if (Object.keys(collectedPoolFees).length === 1) {
+                    if (collectedPoolFees[netw.real].length === 1) {
                         diffRewards = calculatePoolRewardsDiff([{ timestamp: 123, value: "0" }, collectedPoolFees[netw.real][0]]);
                     } else {
                         diffRewards = calculatePoolRewardsDiff(collectedPoolFees[netw.real]);
