@@ -43,7 +43,15 @@ import { LotsException } from "../exceptions/lots.exception";
 import { error } from "console";
 import { Pool } from "../entities/Pool";
 import { CollateralPrice } from "@flarelabs/fasset-bots-core";
-import { calculateUSDValue, dateStringToTimestamp, formatBNToDisplayDecimals, isValidWalletAddress, sleep, timestampToDateString } from "src/utils/utils";
+import {
+    calculateExpirationMinutes,
+    calculateUSDValue,
+    dateStringToTimestamp,
+    formatBNToDisplayDecimals,
+    isValidWalletAddress,
+    sleep,
+    timestampToDateString,
+} from "src/utils/utils";
 import { EXECUTION_FEE, NETWORK_SYMBOLS, RedemptionStatusEnum } from "src/utils/constants";
 import {
     ClaimedPools,
@@ -733,6 +741,7 @@ export class UserService {
                             paymentAddress: decodedLog.paymentAddress,
                             paymentReference: decodedLog.paymentReference,
                             lastUnderlyingBlock: decodedLog.lastUnderlyingBlock,
+                            expirationMinutes: calculateExpirationMinutes(decodedLog.lastUnderlyingTimestamp),
                         } as CREvent;
                     } else {
                         return {
@@ -741,6 +750,7 @@ export class UserService {
                             paymentAddress: decodedLog.paymentAddress,
                             paymentReference: decodedLog.paymentReference,
                             lastUnderlyingBlock: decodedLog.lastUnderlyingBlock,
+                            expirationMinutes: calculateExpirationMinutes(decodedLog.lastUnderlyingTimestamp),
                             from: receipt.from,
                         } as CREventExtended;
                     }

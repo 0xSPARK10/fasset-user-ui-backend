@@ -145,3 +145,12 @@ export function calculateUSDValue(amount: BN, price: BN, priceDecimals: number, 
         groupSeparator: ",",
     });
 }
+
+export function calculateExpirationMinutes(lastUnderlyingTimestamp: string): string {
+    const t = Number(lastUnderlyingTimestamp);
+    const now = Math.floor(Date.now() / 1000);
+    if (now >= t || t - now <= 60) {
+        return String(1);
+    }
+    return String(Math.floor((t - now) / 60));
+}

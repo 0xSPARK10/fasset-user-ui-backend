@@ -7,7 +7,7 @@ import { BotService } from "./bot.init.service";
 import { EntityManager } from "@mikro-orm/core";
 import { Minting } from "../entities/Minting";
 import { Redemption } from "../entities/Redemption";
-import { formatBNToDisplayDecimals } from "src/utils/utils";
+import { calculateExpirationMinutes, formatBNToDisplayDecimals } from "src/utils/utils";
 import { logger } from "src/logger/winston.logger";
 import { Collateral } from "src/entities/Collaterals";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
@@ -77,6 +77,7 @@ export class HistoryService {
                         amount: toBN(crData.valueUBA).add(toBN(crData.feeUBA)).toString(),
                         agentName: agentName ? agentName.agentName : "FlareAgent",
                         lastUnderlyingBlock: crData.lastUnderlyingBlock,
+                        expirationMinutes: calculateExpirationMinutes(crData.lastUnderlyingTimestamp),
                     };
                 }
                 if (underlyingPayment) {

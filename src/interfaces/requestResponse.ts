@@ -77,6 +77,8 @@ export class CREvent {
     paymentReference: string;
     @ApiProperty({ example: "123456" })
     lastUnderlyingBlock: string;
+    @ApiProperty({ example: "123" })
+    expirationMinutes: string;
 }
 
 export class CRStatus {
@@ -449,6 +451,8 @@ export class MintingTransaction {
     agentName: string;
     @ApiProperty({ example: "123456" })
     lastUnderlyingBlock: string;
+    @ApiProperty({ example: "123" })
+    expirationMinutes: string;
 }
 
 export class Progress {
