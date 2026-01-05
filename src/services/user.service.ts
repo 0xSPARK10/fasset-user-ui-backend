@@ -33,7 +33,15 @@ import {
     submitTxResponse,
     VaultCollateralRedemption,
 } from "../interfaces/requestResponse";
-import { AssetManagerSettings, ChainId, CollateralClass, TokenPriceReader, UserBotCommands } from "@flarelabs/fasset-bots-core";
+import {
+    AssetManagerSettings,
+    AvailableAgentInfo,
+    ChainId,
+    CollateralClass,
+    randomChoice,
+    TokenPriceReader,
+    UserBotCommands,
+} from "@flarelabs/fasset-bots-core";
 import { BN_ZERO, MAX_BIPS, artifacts, formatFixed, latestBlockTimestamp, requireNotNull, sumBN, toBN, toBNExp, web3 } from "@flarelabs/fasset-bots-core/utils";
 import { BotService } from "./bot.init.service";
 import { EntityManager } from "@mikro-orm/core";
@@ -52,7 +60,7 @@ import {
     sleep,
     timestampToDateString,
 } from "src/utils/utils";
-import { EXECUTION_FEE, NETWORK_SYMBOLS, RedemptionStatusEnum } from "src/utils/constants";
+import { EXECUTION_FEE, FILTER_AGENT, NETWORK_SYMBOLS, RedemptionStatusEnum } from "src/utils/constants";
 import {
     ClaimedPools,
     EcosystemData,
@@ -108,7 +116,7 @@ export class UserService {
     //TODO: add verification return and filter by agent with no verification first
     async getBestAgent(fasset: string, lots: number): Promise<BestAgent> {
         const bot = this.botService.getInfoBot(fasset);
-        const bestAgent = await bot.findBestAgent(toBN(lots));
+        const bestAgent = await this.findBestAgent(toBN(lots), fasset);
         if (bestAgent == null) {
             throw new LotsException("Agents need to increase collateral in the system to enable minting.");
         }
@@ -137,6 +145,47 @@ export class UserService {
         };
     }
 
+    /**
+     * Taken from fasset-bots and repurposed for agent filtering.
+     */
+    async getAvailableAgents(chunkSize = 10, fasset: string): Promise<AvailableAgentInfo[]> {
+        const bot = this.botService.getInfoBot(fasset);
+        const result: AvailableAgentInfo[] = [];
+        let start = 0;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            const { 0: list } = await bot.context.assetManager.getAvailableAgentsDetailedList(start, start + chunkSize);
+            result.splice(result.length, 0, ...list);
+            if (list.length < chunkSize) break;
+            start += list.length;
+        }
+        const filtered = result.filter((a) => a.agentVault.toLowerCase() != FILTER_AGENT);
+        return filtered;
+    }
+
+    async findBestAgent(minAvailableLots: BN, fasset: string): Promise<string | undefined> {
+        const bot = this.botService.getInfoBot(fasset);
+        const agents = await this.getAvailableAgents(10, fasset);
+        let eligible = agents.filter((a) => toBN(a.freeCollateralLots).gte(minAvailableLots));
+        if (eligible.length === 0) return undefined;
+        eligible.sort((a, b) => toBN(a.feeBIPS).cmp(toBN(b.feeBIPS)));
+        while (eligible.length > 0) {
+            const lowestFee = toBN(eligible[0].feeBIPS);
+            let optimal = eligible.filter((a) => toBN(a.feeBIPS).eq(lowestFee));
+            while (optimal.length > 0) {
+                const agentVault = requireNotNull(randomChoice(optimal)).agentVault; // list must be nonempty
+                const info = await bot.context.assetManager.getAgentInfo(agentVault);
+                // console.log(`agent ${agentVault} status ${info.status}`);
+                if (Number(info.status) === 0) {
+                    return agentVault;
+                }
+                // agent is in liquidation or something, remove it and try another
+                optimal = optimal.filter((a) => a.agentVault !== agentVault);
+                eligible = eligible.filter((a) => a.agentVault !== agentVault);
+            }
+        }
+    }
+
     async getCRTFee(fasset: string, lots: number): Promise<CRFee> {
         const bot = this.botService.getInfoBot(fasset);
         const collateralReservationFee = await bot.context.assetManager.collateralReservationFee(lots);
@@ -145,7 +194,7 @@ export class UserService {
 
     async getMaxLots(fasset: string): Promise<MaxLots> {
         const bot = this.botService.getInfoBot(fasset);
-        const agents = await bot.getAvailableAgents();
+        const agents = await this.getAvailableAgents(10, fasset);
         const settings = await bot.context.assetManager.getSettings();
         const tokenSupply = await bot.context.fAsset.totalSupply();
         let reserved = toBN(0);

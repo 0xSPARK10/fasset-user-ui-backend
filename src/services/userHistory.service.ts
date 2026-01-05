@@ -33,12 +33,12 @@ export class HistoryService {
         const nowTimestamp = now.getTime();
         const mints = await this.em.find(Minting, { userAddress: userAddress, timestamp: { $gte: date } });
         /*const redeems = await this.em.find(FullRedemption, {
-                userAddress: userAddress.toLocaleLowerCase(),
+                userAddress: userAddress.toLowerCase(),
             });*/
         const incompleteRedeems = await this.em.find(IncompleteRedemption, {
             redeemer: userAddress,
         });
-        //const redeemTickets = await this.em.find(Redemption, { userAddress: userAddress.toLocaleLowerCase() })
+        //const redeemTickets = await this.em.find(Redemption, { userAddress: userAddress.toLowerCase() })
         const userProgress: Progress[] = [];
         for (const mint of mints) {
             if (!this.botService.fassetList.includes(mint.fasset)) {

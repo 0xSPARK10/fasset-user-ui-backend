@@ -11,7 +11,7 @@ import { HttpService } from "@nestjs/axios";
 import { ConfigService } from "@nestjs/config";
 import { Liveness } from "../entities/AgentLiveness";
 import { readFileSync } from "fs";
-import { EMPTY_SUPPLY_BY_COLLATERAL, NETWORK_SYMBOLS, PROOF_OF_RESERVE } from "src/utils/constants";
+import { EMPTY_SUPPLY_BY_COLLATERAL, FILTER_AGENT, NETWORK_SYMBOLS, PROOF_OF_RESERVE } from "src/utils/constants";
 import {
     CurrencyMap,
     EcosystemData,
@@ -249,7 +249,7 @@ export class BotService implements OnModuleInit {
         this.numRedeems = redeemedLots;
 
         //Get top pools with min 500k sgb in nat wei pool collateral
-        const topPools = await this.externalApiService.getBestPerformingPools(3, "500000000000000000000000");
+        const topPools = await this.externalApiService.getBestPerformingPools(4, "500000000000000000000000");
         const bestPools: TopPoolData[] = [];
         //let overCollaterazied = "0";
         for (const [fasset, infoBot] of this.infoBotMap.entries()) {
@@ -972,6 +972,10 @@ export class BotService implements OnModuleInit {
             for (const tp of topPools[faNetw.real]) {
                 const agent = await this.em.findOne(Pool, { poolAddress: tp.pool });
                 if (!agent) {
+                    continue;
+                }
+                // Special check if indexer returns filtered agent or if we already processed 3 top pools.
+                if (agent.vaultAddress.toLowerCase() === FILTER_AGENT || bestPools.length == 3) {
                     continue;
                 }
                 const claimedUSDFormatted = calculateUSDValue(

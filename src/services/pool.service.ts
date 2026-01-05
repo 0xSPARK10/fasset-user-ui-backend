@@ -17,6 +17,7 @@ import { ExternalApiService } from "./external.api.service";
 import { lastValueFrom } from "rxjs";
 import { HttpService } from "@nestjs/axios";
 import { ConfigService } from "@nestjs/config";
+import { FILTER_AGENT } from "src/utils/constants";
 
 const NUM_RETRIES = 3;
 const IERC20 = artifacts.require("IERC20Metadata");
@@ -115,6 +116,9 @@ export class PoolService {
 
                     for (let i = 0; i < agents.length; i++) {
                         const agent = agents[i];
+                        if (agent.vaultAddress.toLowerCase() === FILTER_AGENT) {
+                            continue;
+                        }
                         try {
                             const status = livenessData[i];
                             const info = cptokenBalances[agent.tokenAddress];
@@ -422,6 +426,9 @@ export class PoolService {
             const bot = this.botService.getInfoBot(fasset);
             const nativeSymbol = bot.context.nativeChainInfo.tokenSymbol;
             for (const agent of agents) {
+                if (agent.vaultAddress.toLowerCase() === FILTER_AGENT) {
+                    continue;
+                }
                 try {
                     const pool = await CollateralPool.at(agent.poolAddress);
                     const poolToken = await CollateraPoolToken.at(agent.tokenAddress);
@@ -626,10 +633,7 @@ export class PoolService {
 
                 for (const agent of agents) {
                     try {
-                        if (!agent.publiclyAvailable) {
-                            continue;
-                        }
-                        if (agent.status >= 2) {
+                        if (!agent.publiclyAvailable || agent.vaultAddress.toLowerCase() === FILTER_AGENT || agent.status >= 2) {
                             continue;
                         }
                         const status = await this.getAgentLiveness(agent.vaultAddress, now);
@@ -778,7 +782,7 @@ export class PoolService {
             const availableToMintLots = mintingCap.toString() === "0" ? toBN(0) : availableToMintUBA.div(lotSizeUBA);
             for (const agent of agents) {
                 try {
-                    if (agent.status != 0 || !agent.publiclyAvailable) {
+                    if (agent.status != 0 || !agent.publiclyAvailable || agent.vaultAddress.toLowerCase() === FILTER_AGENT) {
                         continue;
                     }
                     //const info = await infoBot.context.assetManager.getAgentInfo(agent.vaultAddress);

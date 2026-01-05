@@ -58,3 +58,5 @@ export type SecretsFile = {
 };
 
 export const TEN_MINUTES = 10 * 60 * 1000;
+
+export const FILTER_AGENT = "0x09011d2A11A40DB855Cb00B3AA5a0F5F3bd485FD".toLowerCase();
