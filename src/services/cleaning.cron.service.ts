@@ -6,6 +6,11 @@ import { Redemption } from "../entities/Redemption";
 import { FullRedemption } from "src/entities/RedemptionWhole";
 import { RedemptionDefault } from "src/entities/RedemptionDefault";
 import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
+import { GuidRedemption } from "src/entities/OFTRedemptionGUID";
+import { logger } from "src/logger/winston.logger";
+import { OFTReceived } from "src/entities/OFTReceived";
+import { OFTSent } from "src/entities/OFTSent";
+import { CollateralReservationEvent } from "src/entities/CollateralReservation";
 
 @Injectable()
 export class CleaningService {
@@ -18,48 +23,56 @@ export class CleaningService {
     // as proofs are not available anymores
     @Cron("0 0 * * *")
     async deleteOldMintingsREdemptions(): Promise<void> {
-        const now = new Date();
-        const timestamp = now.getTime();
-        const weekTimeStamp = new Date(timestamp - 7 * 24 * 60 * 60 * 1000).getTime();
-        //Get and remove potential expired mintings
-        await this.em.nativeDelete(Minting, {
-            validUntil: { $lt: timestamp },
-        });
+        try {
+            const now = new Date();
+            const timestamp = now.getTime();
+            const weekTimeStamp = new Date(timestamp - 7 * 24 * 60 * 60 * 1000).getTime();
+            //Get and remove potential expired mintings
+            await this.em.nativeDelete(Minting, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            // Get and remove potential unprocessed redemptions
+            await this.em.nativeDelete(Redemption, {
+                timestamp: { $lt: weekTimeStamp },
+            });
 
-        /*if (mintings.length > 0) {
-            await this.em.removeAndFlush(mintings);
-        }*/
-        // Get and remove potential unprocessed redemptions
-        await this.em.nativeDelete(Redemption, {
-            validUntil: { $lt: timestamp },
-        });
-        /*if (redemptions.length > 0) {
-            await this.em.removeAndFlush(redemptions);
-        }*/
+            // Get and remove full redemptions
+            await this.em.nativeDelete(FullRedemption, {
+                timestamp: { $lt: weekTimeStamp },
+            });
 
-        // Get and remove full redemptions
-        await this.em.nativeDelete(FullRedemption, {
-            timestamp: { $lt: weekTimeStamp },
-        });
-        /*if (fullRedemption.length > 0) {
-            await this.em.removeAndFlush(fullRedemption);
-        }*/
+            // Get and remove redemption defaults
+            await this.em.nativeDelete(RedemptionDefault, {
+                timestamp: { $lt: weekTimeStamp },
+            });
 
-        // Get and remove redemption defaults
-        await this.em.nativeDelete(RedemptionDefault, {
-            timestamp: { $lt: weekTimeStamp },
-        });
-        /*if (defaultedRedemptions.length > 0) {
-            await this.em.removeAndFlush(defaultedRedemptions);
-        }*/
+            // Get and remove incomplete redemptions
+            await this.em.nativeDelete(IncompleteRedemption, {
+                timestamp: { $lt: weekTimeStamp },
+            });
 
-        // Get and remove incomplete redemptions
-        await this.em.nativeDelete(IncompleteRedemption, {
-            timestamp: { $lt: weekTimeStamp },
-        });
-        /*if (incompleteRedemption.length > 0) {
-            await this.em.removeAndFlush(incompleteRedemption);
-        }*/
+            // Get and remove incomplete redemptions
+            await this.em.nativeDelete(GuidRedemption, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+
+            // Get and remove incomplete redemptions
+            await this.em.nativeDelete(OFTReceived, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+
+            // Get and remove incomplete redemptions
+            await this.em.nativeDelete(OFTSent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+
+            // Get and remove incomplete redemptions
+            await this.em.nativeDelete(CollateralReservationEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+        } catch (error) {
+            logger.error("Error cleanup events", error);
+        }
     }
 
     // This function checks for unprocessed mintings and redemptions that are older than 1 day and deletes them as they cannot be processed anymore

@@ -53,18 +53,14 @@ export class HistoryService {
             if (mint.txhash == null && Number(mint.timestamp) < nowDateDay && !defaultEvent) {
                 continue;
             }
-            let mintTxhash = mint.txhash;
             let missingUnderlying = false;
             let underlyingTransactionData: MintingTransaction | null = null;
             const isDefaulted = defaultEvent ? true : false;
+            const crData = await this.em.findOne(CollateralReservationEvent, {
+                paymentReference: mint.paymentReference,
+            });
             if (mint.txhash == null) {
-                const underlyingPayment = await this.em.findOne(UnderlyingPayment, {
-                    paymentReference: mint.paymentReference,
-                });
                 missingUnderlying = true;
-                const crData = await this.em.findOne(CollateralReservationEvent, {
-                    paymentReference: mint.paymentReference,
-                });
                 if (!crData || isDefaulted) {
                     missingUnderlying = false;
                 } else {
@@ -80,11 +76,6 @@ export class HistoryService {
                         expirationMinutes: calculateExpirationMinutes(crData.lastUnderlyingTimestamp),
                     };
                 }
-                if (underlyingPayment) {
-                    mintTxhash = underlyingPayment.underlyingHash;
-                } else {
-                    mintTxhash = "Collateral was reserved but XRP deposit is missing.";
-                }
             }
             const progress = {
                 action: "MINT",
@@ -92,7 +83,7 @@ export class HistoryService {
                 amount: mint.amount,
                 fasset: mint.fasset,
                 status: mint.processed,
-                txhash: isDefaulted ? "Collateral was reserved but XRP deposit is missing." : mintTxhash,
+                txhash: crData ? crData.txhash : "Collateral reservation txhash not found.",
                 defaulted: isDefaulted,
                 missingUnderlying: missingUnderlying,
                 underlyingTransactionData: underlyingTransactionData,

@@ -48,6 +48,10 @@ import { WalletService } from "./services/wallet.service";
 import { Wallet } from "./entities/Wallet";
 import { EventReaderService } from "./services/event.reader.service";
 import { TimeDataService } from "./services/time.data.service";
+import { OFTModule } from "./oft/oft.module";
+import { OFTReceived } from "./entities/OFTReceived";
+import { OFTSent } from "./entities/OFTSent";
+import { GuidRedemption } from "./entities/OFTRedemptionGUID";
 
 @Module({
     imports: [
@@ -71,6 +75,9 @@ import { TimeDataService } from "./services/time.data.service";
             MintingDefaultEvent,
             RedemptionBlocked,
             Wallet,
+            OFTReceived,
+            OFTSent,
+            GuidRedemption,
         ]),
         ConfigModule.forRoot({
             isGlobal: true,
@@ -80,6 +87,7 @@ import { TimeDataService } from "./services/time.data.service";
             maxRedirects: 5,
         }),
         CacheModule.register({}),
+        ...(process.env.NETWORK === "flare" || process.env.NETWORK === "coston2" ? [OFTModule] : []),
     ],
     controllers: [
         UserController,

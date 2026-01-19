@@ -7,6 +7,9 @@ import { Collateral } from "src/entities/Collaterals";
 import { IndexerState } from "src/entities/IndexerState";
 import { Minting } from "src/entities/Minting";
 import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
+import { OFTReceived } from "src/entities/OFTReceived";
+import { GuidRedemption } from "src/entities/OFTRedemptionGUID";
+import { OFTSent } from "src/entities/OFTSent";
 import { Pool } from "src/entities/Pool";
 import { Redemption } from "src/entities/Redemption";
 import { RedemptionBlocked } from "src/entities/RedemptionBlockedEvent";
@@ -41,6 +44,9 @@ if (process.env.DB_TYPE === "sqlite") {
             MintingDefaultEvent,
             RedemptionBlocked,
             Wallet,
+            OFTReceived,
+            OFTSent,
+            GuidRedemption,
         ],
         driver: SqliteDriver,
         debug: false,
@@ -66,6 +72,9 @@ if (process.env.DB_TYPE === "sqlite") {
             MintingDefaultEvent,
             RedemptionBlocked,
             Wallet,
+            OFTReceived,
+            OFTSent,
+            GuidRedemption,
         ],
         driver: PostgreSqlDriver,
         debug: false,

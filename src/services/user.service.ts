@@ -56,6 +56,7 @@ import {
     calculateUSDValue,
     dateStringToTimestamp,
     formatBNToDisplayDecimals,
+    formatBNToStringForceDecimals,
     isValidWalletAddress,
     sleep,
     timestampToDateString,
@@ -693,7 +694,7 @@ export class UserService {
         const collaterals: NativeBalanceItem[] = [];
         // Native balance
         const nativeBalanceWrapped = await web3.eth.getBalance(address);
-        const balanceNative = formatBNToDisplayDecimals(toBN(nativeBalanceWrapped), 3, 18);
+        const balanceNative = formatBNToStringForceDecimals(toBN(nativeBalanceWrapped), 2, 18);
         const nativeUSDFormatted = calculateUSDValue(toBN(nativeBalanceWrapped), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
         collaterals.push({
             symbol: bot.context.nativeChainInfo.tokenSymbol,
@@ -722,7 +723,7 @@ export class UserService {
             const fDecimals = Number(settingsAsset.assetDecimals);
             const fCollateral = {
                 symbol: fBot.fAssetSymbol,
-                balance: formatBNToDisplayDecimals(toBN(fBalance), 8, fDecimals),
+                balance: formatBNToStringForceDecimals(toBN(fBalance), 2, fDecimals),
                 valueUSD: assetUSDFormatted,
                 lots: lots.toString(),
             };
@@ -735,7 +736,7 @@ export class UserService {
             const token = await IERC20.at(collateralEntity.token);
             const balance = await token.balanceOf(address);
             const decimals = (await token.decimals()).toNumber();
-            collaterals.push({ symbol: c == "USDT" ? "USDT0" : c, balance: formatBNToDisplayDecimals(toBN(balance), 3, decimals) });
+            collaterals.push({ symbol: c == "USDT" ? "USDT0" : c, balance: formatBNToStringForceDecimals(toBN(balance), 2, decimals) });
         }
         return collaterals;
     }
@@ -1219,12 +1220,18 @@ export class UserService {
     }
 
     async getAssetPrice(fasset: string): Promise<AssetPrice> {
-        const bot = this.botService.getInfoBot(fasset);
-        const settings = await bot.context.assetManager.getSettings();
-        const priceReader = await TokenPriceReader.create(settings);
-        const price = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
-        const priceMul = price.price.toNumber() / 10 ** price.decimals.toNumber();
-        return { price: priceMul };
+        //const cachedPrice = await this.cacheManager.set(feeName, btcFee.toString(), 600000);
+        const cachedPrice = await this.cacheManager.get(fasset + "price");
+        if (!cachedPrice) {
+            const bot = this.botService.getInfoBot(fasset);
+            const settings = await bot.context.assetManager.getSettings();
+            const priceReader = await TokenPriceReader.create(settings);
+            const price = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
+            const priceMul = price.price.toNumber() / 10 ** price.decimals.toNumber();
+            await this.cacheManager.set(fasset + "-price", priceMul, 5000);
+            return { price: priceMul };
+        }
+        return { price: Number(cachedPrice) };
     }
 
     async getMintingEnabled(): Promise<FassetStatus[]> {

@@ -733,3 +733,49 @@ export class RedemptionQueue {
     @ApiProperty({ example: 55 })
     maxLots: number;
 }
+
+export class RedemptionOFT {
+    @ApiProperty({ example: "0x123" })
+    txhash: string;
+}
+
+export class OFTHistory {
+    @ApiProperty({ example: "SEND" })
+    action: string;
+    @ApiProperty({ example: 1726125839877 })
+    timestamp: number;
+    @ApiProperty({ example: 1234 })
+    eid: number;
+    @ApiProperty({ example: "0x123" })
+    txhash: string;
+    @ApiProperty({ example: "660" })
+    amountSent?: string;
+    @ApiProperty({ example: "660" })
+    amountReceived?: string;
+    @ApiProperty({ example: "660" })
+    amount: string;
+    @ApiProperty({ example: true })
+    toHypercore?: boolean;
+    @ApiProperty({ example: "FTestXRP" })
+    fasset: string;
+    @ApiProperty({ example: true })
+    status: boolean;
+    @ApiProperty({ example: false })
+    defaulted?: boolean;
+    @ApiProperty({ example: "12345" })
+    ticketID?: string;
+    @ApiProperty({ example: "FTestXRP" })
+    vaultToken?: string;
+    @ApiProperty({ example: "390.666" })
+    vaultTokenValueRedeemed?: string;
+    @ApiProperty({ example: "390.666" })
+    poolTokenValueRedeemed?: string;
+    @ApiProperty({ example: "390.666" })
+    underlyingPaid?: string;
+    @ApiProperty({ example: true })
+    incomplete?: boolean;
+    @ApiProperty({ example: "30" })
+    remainingLots?: string;
+    @ApiProperty({ example: true })
+    redemptionBlocked?: boolean;
+}

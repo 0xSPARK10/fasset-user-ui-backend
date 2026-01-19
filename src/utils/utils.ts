@@ -42,6 +42,40 @@ export function formatBNToDisplayDecimals(bn: BN, displayDecimals: number, baseU
     return formattedNumber;
 }
 
+//Display displayDecimals, if all decimals are 0 it only shows 2.
+export function formatBNToStringForceDecimals(bn: BN, displayDecimals: number, baseUnitDecimals: number): string {
+    const baseUnitStr = bn.toString(10);
+
+    let integerPart = "0";
+    let fractionalPart = "";
+
+    if (baseUnitStr.length > baseUnitDecimals) {
+        integerPart = baseUnitStr.slice(0, baseUnitStr.length - baseUnitDecimals);
+        fractionalPart = baseUnitStr.slice(baseUnitStr.length - baseUnitDecimals);
+    } else {
+        fractionalPart = baseUnitStr.padStart(baseUnitDecimals, "0");
+    }
+    fractionalPart = fractionalPart.padEnd(baseUnitDecimals, "0");
+    const fullFraction = fractionalPart.slice(0, displayDecimals);
+
+    const isAllZero = /^0+$/.test(fullFraction);
+
+    let displayFraction: string;
+
+    if (isAllZero && displayDecimals > 2) {
+        displayFraction = "00";
+    } else {
+        displayFraction = fullFraction.padEnd(displayDecimals, "0");
+    }
+    integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+    if (displayFraction.length > 0) {
+        return `${integerPart}.${displayFraction}`;
+    }
+
+    return integerPart;
+}
+
 export function convertTokenWeiToAMG(valueNATWei: BNish, amgToTokenWeiPrice: BNish) {
     return toBN(valueNATWei).mul(AMG_TOKENWEI_PRICE_SCALE).div(toBN(amgToTokenWeiPrice));
 }
