@@ -67,7 +67,7 @@ export class EventReaderService implements OnApplicationBootstrap {
                     await this.em.persistAndFlush(lbDB);
                 }
                 if (lastEventBlock >= lastBlock) {
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                    await new Promise((resolve) => setTimeout(resolve, 2000));
                     continue;
                 }
                 //logger.info(`Reading events for from: ${lastEventBlock} to ${lastBlock.toString()}`);
@@ -271,6 +271,7 @@ export class EventReaderService implements OnApplicationBootstrap {
                 //logger.info(`Finish reading events.`);
             } catch (error) {
                 logger.error(`'Error in event reader:`, error);
+                await new Promise((resolve) => setTimeout(resolve, 5000));
             }
         }
     }

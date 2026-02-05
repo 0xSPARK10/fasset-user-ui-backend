@@ -69,6 +69,7 @@ export class RunnerService implements OnApplicationBootstrap {
                 }
             } catch (error) {
                 logger.error(`Starting runner.service run into error`, error);
+                await new Promise((resolve) => setTimeout(resolve, 5000));
             }
         }
     }

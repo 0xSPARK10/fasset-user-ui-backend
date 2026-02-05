@@ -153,7 +153,8 @@ export class OFTEventReaderService implements OnModuleInit {
                     await this.em.persistAndFlush(lastBlockDB);
                 }
             } catch (error) {
-                logger.error(`'Error in oft event reader:`, error);
+                logger.error(`Error in oft event reader:`, error);
+                await new Promise((resolve) => setTimeout(resolve, 5000));
             }
         }
     }
