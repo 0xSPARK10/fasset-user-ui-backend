@@ -9,6 +9,8 @@ export type EcosystemApp = {
     pairs: string[];
     coin_type: string;
     url: string;
+    yt_url: string;
+    description: string;
 };
 
 @Injectable()
