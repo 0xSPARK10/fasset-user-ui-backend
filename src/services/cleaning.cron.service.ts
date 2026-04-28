@@ -11,6 +11,15 @@ import { logger } from "src/logger/winston.logger";
 import { OFTReceived } from "src/entities/OFTReceived";
 import { OFTSent } from "src/entities/OFTSent";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
+import { OFTRedemption } from "src/entities/OFTRedemption";
+import { DirectMinting } from "src/entities/DirectMinting";
+import { DirectMintingExecutedEvent } from "src/entities/DirectMintingExecutedEvent";
+import { DirectMintingExecutedToSmartAccountEvent } from "src/entities/DirectMintingExecutedToSmartAccountEvent";
+import { DirectMintingPaymentTooSmallForFeeEvent } from "src/entities/DirectMintingPaymentTooSmallForFeeEvent";
+import { DirectMintingDelayedEvent } from "src/entities/DirectMintingDelayedEvent";
+import { LargeDirectMintingDelayedEvent } from "src/entities/LargeDirectMintingDelayedEvent";
+import { RedemptionWithTagRequestedEvent } from "src/entities/RedemptionWithTagRequestedEvent";
+import { RedemptionAmountIncompleteEvent } from "src/entities/RedemptionAmountIncompleteEvent";
 
 @Injectable()
 export class CleaningService {
@@ -68,6 +77,38 @@ export class CleaningService {
 
             // Get and remove incomplete redemptions
             await this.em.nativeDelete(CollateralReservationEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            // Get and remove incomplete redemptions
+            await this.em.nativeDelete(OFTRedemption, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+
+            // Clean up direct minting entities
+            await this.em.nativeDelete(DirectMinting, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(DirectMintingExecutedEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(DirectMintingExecutedToSmartAccountEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(DirectMintingPaymentTooSmallForFeeEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(DirectMintingDelayedEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(LargeDirectMintingDelayedEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+
+            // Clean up redemption with tag entities
+            await this.em.nativeDelete(RedemptionWithTagRequestedEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(RedemptionAmountIncompleteEvent, {
                 timestamp: { $lt: weekTimeStamp },
             });
         } catch (error) {

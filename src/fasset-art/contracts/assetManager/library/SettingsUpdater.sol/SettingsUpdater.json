@@ -1,0 +1,16 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "SettingsUpdater",
+  "sourceName": "contracts/assetManager/library/SettingsUpdater.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "TooCloseToPreviousUpdate",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220e9d647adad8a8c570d3ba13e801d48f68ae73fe169c8f71afeb4dd7e62415cbc64736f6c634300081b0033",
+  "deployedBytecode": "0x73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220e9d647adad8a8c570d3ba13e801d48f68ae73fe169c8f71afeb4dd7e62415cbc64736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

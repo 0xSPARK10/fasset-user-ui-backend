@@ -1,0 +1,1252 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "SmartAccountManagerMock",
+  "sourceName": "contracts/assetManager/mock/SmartAccountManagerMock.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "contract IFAsset",
+          "name": "_fAsset",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "AddressZero",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes",
+          "name": "returnData",
+          "type": "bytes"
+        }
+      ],
+      "name": "CallFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        }
+      ],
+      "name": "InsufficientAmountForFee",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidAmount",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "instructionType",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "instructionCommand",
+          "type": "uint256"
+        }
+      ],
+      "name": "InvalidInstruction",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "instructionId",
+          "type": "uint8"
+        }
+      ],
+      "name": "InvalidInstructionId",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "instructionType",
+          "type": "uint256"
+        }
+      ],
+      "name": "InvalidInstructionType",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidMemoData",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidMinter",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "expected",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "actual",
+          "type": "uint256"
+        }
+      ],
+      "name": "InvalidNonce",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "currentNonce",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "newNonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "InvalidNonceIncrease",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "requiredAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "InvalidPaymentAmount",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        }
+      ],
+      "name": "InvalidSender",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidTransactionId",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "MintingNotCompleted",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NoMemoData",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyAssetManager",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TransactionAlreadyExecuted",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "UnknownCollateralReservationId",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ValueZero",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "expected",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "actual",
+          "type": "address"
+        }
+      ],
+      "name": "WrongExecutor",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "fxrp",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "Approved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "year",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "month",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "day",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "shares",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "Claimed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "transactionId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "paymentReference",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "xrplOwner",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "collateralReservationId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "agentVault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "lots",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "executor",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "executorFee",
+          "type": "uint256"
+        }
+      ],
+      "name": "CollateralReserved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "shares",
+          "type": "uint256"
+        }
+      ],
+      "name": "Deposited",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "transactionId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "sourceAddress",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "executorFee",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "executor",
+          "type": "address"
+        }
+      ],
+      "name": "DirectMintingExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        }
+      ],
+      "name": "ExecutorRemoved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "executor",
+          "type": "address"
+        }
+      ],
+      "name": "ExecutorSet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "lots",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "executor",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "executorFee",
+          "type": "uint256"
+        }
+      ],
+      "name": "FXrpRedeemed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "FXrpTransferred",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "targetTxId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "IgnoreMemoSet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "transactionId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "paymentReference",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "xrplOwner",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "instructionId",
+          "type": "uint256"
+        }
+      ],
+      "name": "InstructionExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "transactionId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "sourceAddress",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "underlyingTimestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "memoData",
+          "type": "bytes"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "nativeValueReceived",
+          "type": "uint256"
+        }
+      ],
+      "name": "MintedToSmartAccount",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "newNonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "NonceIncreased",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "shares",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "claimableEpoch",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "year",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "month",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "day",
+          "type": "uint256"
+        }
+      ],
+      "name": "RedeemRequested",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "shares",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "Redeemed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "targetTxId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "newFee",
+          "type": "uint64"
+        }
+      ],
+      "name": "ReplacementFeeSet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "UserOperationExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "personalAccount",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "period",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "WithdrawalClaimed",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_collateralReservationId",
+          "type": "uint256"
+        },
+        {
+          "components": [
+            {
+              "internalType": "bytes32[]",
+              "name": "merkleProof",
+              "type": "bytes32[]"
+            },
+            {
+              "components": [
+                {
+                  "internalType": "bytes32",
+                  "name": "attestationType",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "bytes32",
+                  "name": "sourceId",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "uint64",
+                  "name": "votingRound",
+                  "type": "uint64"
+                },
+                {
+                  "internalType": "uint64",
+                  "name": "lowestUsedTimestamp",
+                  "type": "uint64"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "bytes32",
+                      "name": "transactionId",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "inUtxo",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "utxo",
+                      "type": "uint256"
+                    }
+                  ],
+                  "internalType": "struct IPayment.RequestBody",
+                  "name": "requestBody",
+                  "type": "tuple"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "uint64",
+                      "name": "blockNumber",
+                      "type": "uint64"
+                    },
+                    {
+                      "internalType": "uint64",
+                      "name": "blockTimestamp",
+                      "type": "uint64"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "sourceAddressHash",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "sourceAddressesRoot",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "receivingAddressHash",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "intendedReceivingAddressHash",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "spentAmount",
+                      "type": "int256"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "intendedSpentAmount",
+                      "type": "int256"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "receivedAmount",
+                      "type": "int256"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "intendedReceivedAmount",
+                      "type": "int256"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "standardPaymentReference",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "oneToOne",
+                      "type": "bool"
+                    },
+                    {
+                      "internalType": "uint8",
+                      "name": "status",
+                      "type": "uint8"
+                    }
+                  ],
+                  "internalType": "struct IPayment.ResponseBody",
+                  "name": "responseBody",
+                  "type": "tuple"
+                }
+              ],
+              "internalType": "struct IPayment.Response",
+              "name": "data",
+              "type": "tuple"
+            }
+          ],
+          "internalType": "struct IPayment.Proof",
+          "name": "_proof",
+          "type": "tuple"
+        },
+        {
+          "internalType": "string",
+          "name": "_xrplAddress",
+          "type": "string"
+        }
+      ],
+      "name": "executeDepositAfterMinting",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "bytes32[]",
+              "name": "merkleProof",
+              "type": "bytes32[]"
+            },
+            {
+              "components": [
+                {
+                  "internalType": "bytes32",
+                  "name": "attestationType",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "bytes32",
+                  "name": "sourceId",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "uint64",
+                  "name": "votingRound",
+                  "type": "uint64"
+                },
+                {
+                  "internalType": "uint64",
+                  "name": "lowestUsedTimestamp",
+                  "type": "uint64"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "bytes32",
+                      "name": "transactionId",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "inUtxo",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "utxo",
+                      "type": "uint256"
+                    }
+                  ],
+                  "internalType": "struct IPayment.RequestBody",
+                  "name": "requestBody",
+                  "type": "tuple"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "uint64",
+                      "name": "blockNumber",
+                      "type": "uint64"
+                    },
+                    {
+                      "internalType": "uint64",
+                      "name": "blockTimestamp",
+                      "type": "uint64"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "sourceAddressHash",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "sourceAddressesRoot",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "receivingAddressHash",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "intendedReceivingAddressHash",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "spentAmount",
+                      "type": "int256"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "intendedSpentAmount",
+                      "type": "int256"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "receivedAmount",
+                      "type": "int256"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "intendedReceivedAmount",
+                      "type": "int256"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "standardPaymentReference",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "oneToOne",
+                      "type": "bool"
+                    },
+                    {
+                      "internalType": "uint8",
+                      "name": "status",
+                      "type": "uint8"
+                    }
+                  ],
+                  "internalType": "struct IPayment.ResponseBody",
+                  "name": "responseBody",
+                  "type": "tuple"
+                }
+              ],
+              "internalType": "struct IPayment.Response",
+              "name": "data",
+              "type": "tuple"
+            }
+          ],
+          "internalType": "struct IPayment.Proof",
+          "name": "_proof",
+          "type": "tuple"
+        },
+        {
+          "internalType": "string",
+          "name": "_xrplAddress",
+          "type": "string"
+        }
+      ],
+      "name": "executeInstruction",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "fAsset",
+      "outputs": [
+        {
+          "internalType": "contract IFAsset",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_personalAccount",
+          "type": "address"
+        }
+      ],
+      "name": "getExecutor",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_personalAccount",
+          "type": "address"
+        }
+      ],
+      "name": "getNonce",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_collateralReservationId",
+          "type": "uint256"
+        }
+      ],
+      "name": "getTransactionIdForCollateralReservation",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "_transactionId",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "_transactionId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "isTransactionIdUsed",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "_transactionId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "string",
+          "name": "_sourceAddress",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_underlyingTimestamp",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "_memoData",
+          "type": "bytes"
+        },
+        {
+          "internalType": "address payable",
+          "name": "_executor",
+          "type": "address"
+        }
+      ],
+      "name": "mintedFAssets",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_xrplAddress",
+          "type": "string"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "_paymentReference",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "_transactionId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "reserveCollateral",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "_collateralReservationId",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x60a0604052348015600f57600080fd5b50604051610697380380610697833981016040819052602c91603c565b6001600160a01b0316608052606a565b600060208284031215604d57600080fd5b81516001600160a01b0381168114606357600080fd5b9392505050565b60805161060b61008c6000396000818161014c01526101ee015261060b6000f3fe6080604052600436106100865760003560e01c806371110cc81161005957806371110cc81461011f5780637c7db1a51461013a5780638e1030301461016e578063a01b275714610199578063e8a6eec2146101ba57600080fd5b80631add812b1461008b5780632d0335ab146100b657806361119302146100d75780636ac2d5681461010a575b600080fd5b6100a36100993660046102f4565b6000949350505050565b6040519081526020015b60405180910390f35b3480156100c257600080fd5b506100a36100d136600461035d565b50600090565b3480156100e357600080fd5b506100f26100d136600461035d565b6040516001600160a01b0390911681526020016100ad565b61011d61011836600461039a565b505050565b005b34801561012b57600080fd5b506100a36100d1366004610408565b34801561014657600080fd5b506100f27f000000000000000000000000000000000000000000000000000000000000000081565b34801561017a57600080fd5b506101896100d1366004610408565b60405190151581526020016100ad565b3480156101a557600080fd5b5061011d6101b4366004610421565b50505050565b61011d6101c8366004610496565b60405163a9059cbb60e01b81526001600160a01b038281166004830152602482018790527f0000000000000000000000000000000000000000000000000000000000000000169063a9059cbb906044016020604051808303816000875af1158015610237573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061025b919061053b565b507fdbd1b48d2bee53a0b4bb8516d39e3ba748ab235c3cbed63baf0ac9fffe095bad8888888888888834604051610299989796959493929190610586565b60405180910390a15050505050505050565b60008083601f8401126102bd57600080fd5b50813567ffffffffffffffff8111156102d557600080fd5b6020830191508360208285010111156102ed57600080fd5b9250929050565b6000806000806060858703121561030a57600080fd5b843567ffffffffffffffff81111561032157600080fd5b61032d878288016102ab565b90989097506020870135966040013595509350505050565b6001600160a01b038116811461035a57600080fd5b50565b60006020828403121561036f57600080fd5b813561037a81610345565b9392505050565b60006102a0828403121561039457600080fd5b50919050565b6000806000604084860312156103af57600080fd5b833567ffffffffffffffff8111156103c657600080fd5b6103d286828701610381565b935050602084013567ffffffffffffffff8111156103ef57600080fd5b6103fb868287016102ab565b9497909650939450505050565b60006020828403121561041a57600080fd5b5035919050565b6000806000806060858703121561043757600080fd5b84359350602085013567ffffffffffffffff81111561045557600080fd5b61046187828801610381565b935050604085013567ffffffffffffffff81111561047e57600080fd5b61048a878288016102ab565b95989497509550505050565b60008060008060008060008060c0898b0312156104b257600080fd5b88359750602089013567ffffffffffffffff8111156104d057600080fd5b6104dc8b828c016102ab565b9098509650506040890135945060608901359350608089013567ffffffffffffffff81111561050a57600080fd5b6105168b828c016102ab565b90945092505060a089013561052a81610345565b809150509295985092959890939650565b60006020828403121561054d57600080fd5b8151801515811461037a57600080fd5b81835281816020850137506000828201602090810191909152601f909101601f19169091010190565b88815260c0602082015260006105a060c08301898b61055d565b87604084015286606084015282810360808401526105bf81868861055d565b9150508260a0830152999850505050505050505056fea264697066735822122075acc186b6be34c60da44cde6cd5f183861ad979e82147bd30d51e14126fec7e64736f6c634300081b0033",
+  "deployedBytecode": "0x6080604052600436106100865760003560e01c806371110cc81161005957806371110cc81461011f5780637c7db1a51461013a5780638e1030301461016e578063a01b275714610199578063e8a6eec2146101ba57600080fd5b80631add812b1461008b5780632d0335ab146100b657806361119302146100d75780636ac2d5681461010a575b600080fd5b6100a36100993660046102f4565b6000949350505050565b6040519081526020015b60405180910390f35b3480156100c257600080fd5b506100a36100d136600461035d565b50600090565b3480156100e357600080fd5b506100f26100d136600461035d565b6040516001600160a01b0390911681526020016100ad565b61011d61011836600461039a565b505050565b005b34801561012b57600080fd5b506100a36100d1366004610408565b34801561014657600080fd5b506100f27f000000000000000000000000000000000000000000000000000000000000000081565b34801561017a57600080fd5b506101896100d1366004610408565b60405190151581526020016100ad565b3480156101a557600080fd5b5061011d6101b4366004610421565b50505050565b61011d6101c8366004610496565b60405163a9059cbb60e01b81526001600160a01b038281166004830152602482018790527f0000000000000000000000000000000000000000000000000000000000000000169063a9059cbb906044016020604051808303816000875af1158015610237573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061025b919061053b565b507fdbd1b48d2bee53a0b4bb8516d39e3ba748ab235c3cbed63baf0ac9fffe095bad8888888888888834604051610299989796959493929190610586565b60405180910390a15050505050505050565b60008083601f8401126102bd57600080fd5b50813567ffffffffffffffff8111156102d557600080fd5b6020830191508360208285010111156102ed57600080fd5b9250929050565b6000806000806060858703121561030a57600080fd5b843567ffffffffffffffff81111561032157600080fd5b61032d878288016102ab565b90989097506020870135966040013595509350505050565b6001600160a01b038116811461035a57600080fd5b50565b60006020828403121561036f57600080fd5b813561037a81610345565b9392505050565b60006102a0828403121561039457600080fd5b50919050565b6000806000604084860312156103af57600080fd5b833567ffffffffffffffff8111156103c657600080fd5b6103d286828701610381565b935050602084013567ffffffffffffffff8111156103ef57600080fd5b6103fb868287016102ab565b9497909650939450505050565b60006020828403121561041a57600080fd5b5035919050565b6000806000806060858703121561043757600080fd5b84359350602085013567ffffffffffffffff81111561045557600080fd5b61046187828801610381565b935050604085013567ffffffffffffffff81111561047e57600080fd5b61048a878288016102ab565b95989497509550505050565b60008060008060008060008060c0898b0312156104b257600080fd5b88359750602089013567ffffffffffffffff8111156104d057600080fd5b6104dc8b828c016102ab565b9098509650506040890135945060608901359350608089013567ffffffffffffffff81111561050a57600080fd5b6105168b828c016102ab565b90945092505060a089013561052a81610345565b809150509295985092959890939650565b60006020828403121561054d57600080fd5b8151801515811461037a57600080fd5b81835281816020850137506000828201602090810191909152601f909101601f19169091010190565b88815260c0602082015260006105a060c08301898b61055d565b87604084015286606084015282810360808401526105bf81868861055d565b9150508260a0830152999850505050505050505056fea264697066735822122075acc186b6be34c60da44cde6cd5f183861ad979e82147bd30d51e14126fec7e64736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

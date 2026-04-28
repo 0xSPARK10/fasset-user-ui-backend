@@ -35,7 +35,6 @@ import { UnderlyingPayment } from "./entities/UnderlyingPayment";
 import { IndexerState } from "./entities/IndexerState";
 import { MintingDefaultEvent } from "./entities/MintingDefaultEvent";
 import { PoolService } from "./services/pool.service";
-import { UtxoService } from "./services/utxo.service";
 import { HistoryService } from "./services/userHistory.service";
 import { EarnController } from "./controllers/earn.controller";
 import { EarnService } from "./services/earn.service";
@@ -52,6 +51,21 @@ import { OFTModule } from "./oft/oft.module";
 import { OFTReceived } from "./entities/OFTReceived";
 import { OFTSent } from "./entities/OFTSent";
 import { GuidRedemption } from "./entities/OFTRedemptionGUID";
+import { OFTRedemption } from "./entities/OFTRedemption";
+import { ContractService } from "./services/contract.service";
+import { EthersService } from "./services/ethers.service";
+import { FassetConfigService } from "./services/fasset.config.service";
+import { DalService } from "./services/dal.service";
+import { OFTRedemptionFailed } from "./entities/OFTRedemptionFailed";
+import { DirectMinting } from "./entities/DirectMinting";
+import { DirectMintingExecutedEvent } from "./entities/DirectMintingExecutedEvent";
+import { DirectMintingExecutedToSmartAccountEvent } from "./entities/DirectMintingExecutedToSmartAccountEvent";
+import { DirectMintingPaymentTooSmallForFeeEvent } from "./entities/DirectMintingPaymentTooSmallForFeeEvent";
+import { DirectMintingDelayedEvent } from "./entities/DirectMintingDelayedEvent";
+import { LargeDirectMintingDelayedEvent } from "./entities/LargeDirectMintingDelayedEvent";
+import { RedemptionWithTagRequestedEvent } from "./entities/RedemptionWithTagRequestedEvent";
+import { RedemptionAmountIncompleteEvent } from "./entities/RedemptionAmountIncompleteEvent";
+import { DirectMintingScannerService } from "./services/direct.minting.scanner.service";
 
 @Module({
     imports: [
@@ -78,6 +92,16 @@ import { GuidRedemption } from "./entities/OFTRedemptionGUID";
             OFTReceived,
             OFTSent,
             GuidRedemption,
+            OFTRedemption,
+            OFTRedemptionFailed,
+            DirectMinting,
+            DirectMintingExecutedEvent,
+            DirectMintingExecutedToSmartAccountEvent,
+            DirectMintingPaymentTooSmallForFeeEvent,
+            DirectMintingDelayedEvent,
+            LargeDirectMintingDelayedEvent,
+            RedemptionWithTagRequestedEvent,
+            RedemptionAmountIncompleteEvent,
         ]),
         ConfigModule.forRoot({
             isGlobal: true,
@@ -109,7 +133,6 @@ import { GuidRedemption } from "./entities/OFTRedemptionGUID";
         RunnerService,
         ExternalApiService,
         PoolService,
-        UtxoService,
         HistoryService,
         EarnService,
         VersionService,
@@ -117,8 +140,13 @@ import { GuidRedemption } from "./entities/OFTRedemptionGUID";
         WalletService,
         EventReaderService,
         TimeDataService,
+        ContractService,
+        EthersService,
+        FassetConfigService,
+        DalService,
+        DirectMintingScannerService,
     ],
-    exports: [BotService, UserService, PoolService, UtxoService, HistoryService],
+    exports: [BotService, UserService, PoolService, HistoryService, ContractService, FassetConfigService],
 })
 export class AppModule implements NestModule {
     configure(consumer: MiddlewareConsumer) {

@@ -9,9 +9,6 @@ export class RewardsController {
     constructor(private readonly rewardsService: RewardsService) {}
 
     @Get("rewards/:address")
-    //@ApiResponse({
-    //    type: any,
-    //})
     getRewards(@Param("address") address: string): Promise<any> {
         try {
             return this.rewardsService.getRewardsForUser(address);

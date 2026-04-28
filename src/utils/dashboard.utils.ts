@@ -1,6 +1,6 @@
 import { FassetSupplyDiff, FassetTimeSupply, GenericDiff, PoolCollateralDiff, TimeSeries, TimeSeriesIndexer, TimeSpan } from "src/interfaces/structure";
 import { NETWORK_SYMBOLS } from "./constants";
-import { formatFixed, toBN } from "@flarelabs/fasset-bots-core/utils";
+import { formatFixedBigInt } from "./utils";
 
 export function calculateFassetSupplyDiff(supply: any, fassetList: string[], envType: string): FassetSupplyDiff[] {
     //TODO fix test, production
@@ -77,7 +77,7 @@ export function calculatePoolCollateralDiff(rewards: FassetTimeSupply[]): PoolCo
 export function formatTimeSeries(data: TimeSeriesIndexer[]): TimeSeries[] {
     const timeSeries: TimeSeries[] = [];
     for (let i = 0; i < data.length; i++) {
-        const valueUSD = formatFixed(toBN(data[i].value), 8, {
+        const valueUSD = formatFixedBigInt(BigInt(data[i].value), 8, {
             decimals: 3,
             groupDigits: true,
             groupSeparator: ",",
@@ -113,7 +113,7 @@ export function formatTimeSpanRatio(data: TimeSpan[]): TimeSeries[] {
 export function formatTimespanToTimeseries(data: FassetTimeSupply[]): TimeSeries[] {
     const timeSeries: TimeSeries[] = [];
     for (let i = 0; i < data.length; i++) {
-        const valueUSD = formatFixed(toBN(data[i].value), 8, {
+        const valueUSD = formatFixedBigInt(BigInt(data[i].value), 8, {
             decimals: 3,
             groupDigits: true,
             groupSeparator: ",",

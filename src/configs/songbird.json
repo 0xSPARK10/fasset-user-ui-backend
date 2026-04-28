@@ -1,0 +1,12 @@
+{
+    "nativeSymbol": "SGB",
+    "fassets": {
+        "FXRP": {
+            "chainId": "XRP",
+            "tokenName": "XRP",
+            "tokenSymbol": "XRP",
+            "tokenDecimals": 6,
+            "chain": "XRP"
+        }
+    }
+}

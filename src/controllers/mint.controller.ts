@@ -8,6 +8,7 @@ import {
     EcosystemData,
     LotSize,
     MaxLots,
+    MintingCapInfo,
     MintingStatus,
     RequestMint,
     submitTxResponse,
@@ -18,15 +19,11 @@ import {
 import { SelectedUTXOAddress } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
 import { UserService } from "src/services/user.service";
-import { UtxoService } from "src/services/utxo.service";
 
 @ApiTags("Minting")
 @Controller("api")
 export class MintController {
-    constructor(
-        private readonly userService: UserService,
-        private readonly utxoService: UtxoService
-    ) {}
+    constructor(private readonly userService: UserService) {}
 
     @Get("maxLots/:fasset")
     @ApiResponse({
@@ -37,6 +34,25 @@ export class MintController {
             return this.userService.getMaxLots(fasset);
         } catch (error) {
             logger.error(`Error in getMaxLots for ${fasset}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("mintingCapInfo/:fasset")
+    @ApiResponse({
+        type: MintingCapInfo,
+    })
+    getMintingCapInfo(@Param("fasset") fasset: string): Promise<MintingCapInfo> {
+        try {
+            return this.userService.getMintingCapInfo(fasset);
+        } catch (error) {
+            logger.error(`Error in getMintingCapInfo for ${fasset}`, error);
             throw new HttpException(
                 {
                     status: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -185,9 +201,15 @@ export class MintController {
     @ApiResponse({
         type: UTXOSLedger,
     })
-    getUtxosForTransaction(@Param("fasset") fasset: string, @Param("xpub") xpub: string, @Param("amount") amount: string): Promise<UTXOSLedger> {
+    async getUtxosForTransaction(@Param("fasset") fasset: string, @Param("xpub") xpub: string, @Param("amount") amount: string): Promise<UTXOSLedger> {
         try {
-            return this.utxoService.calculateUtxosForAmount(fasset, xpub, amount);
+            const result = new UTXOSLedger();
+
+            result.selectedUtxos = [];
+            result.estimatedFee = 12456;
+            result.returnAddresses = [];
+
+            return result;
         } catch (error) {
             logger.error(`Error in calculate utxos for amount for ${fasset}`, error);
             throw new HttpException(
@@ -239,9 +261,6 @@ export class MintController {
     }
 
     @Post("prepareUtxos/:fasset/:amount/:recipient/:memo/:fee")
-    /*@ApiResponse({
-        type: CommonBalance,
-    })*/
     getPrepareUtxos(
         @Param("fasset") fasset: string,
         @Param("amount") amount: string,
@@ -252,8 +271,7 @@ export class MintController {
         @Query("changeAddresses") changeAddresses?: string
     ): Promise<any> {
         try {
-            const addressListChange = changeAddresses ? changeAddresses.split(",") : [];
-            return this.utxoService.prepareUtxosForAmount(fasset, amount, recipient, memo, fee, addressListChange, selectedUtxos);
+            return null;
         } catch (error) {
             logger.error(`Error in prepare utxo for ${fasset}`, error);
             throw new HttpException(
@@ -270,7 +288,7 @@ export class MintController {
     @ApiResponse({
         type: ReturnAddresses,
     })
-    getReturnAddresses(
+    async getReturnAddresses(
         @Param("fasset") fasset: string,
         @Param("amount") amount: string,
         @Param("address") address: string,
@@ -278,9 +296,13 @@ export class MintController {
         @Query("changeAddresses") changeAddresses?: string
     ): Promise<ReturnAddresses> {
         try {
-            const addressListReceive = receiveAddresses ? receiveAddresses.split(",") : [];
-            const addressListChange = changeAddresses ? changeAddresses.split(",") : [];
-            return this.utxoService.returnUtxosForAmount(fasset, amount, address, addressListReceive, addressListChange);
+            const result = new ReturnAddresses();
+
+            result.addresses = ["0x7b7204684854Da846E49dEFd1408b52c4e0E3ce8", "0x9f3C4A2b5D8eF1234567890aBCdEf12345678901"];
+
+            result.estimatedFee = "12456";
+
+            return result;
         } catch (error) {
             logger.error(`Error in getUnderlyingBalance for ${fasset} and ${address}`, error);
             throw new HttpException(

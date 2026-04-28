@@ -108,6 +108,10 @@ export class MintingStatus {
     status: boolean;
     @ApiProperty({ example: 1 })
     step: number;
+    @ApiProperty({ example: false, required: false, description: "Whether this direct minting is delayed" })
+    delayed?: boolean;
+    @ApiProperty({ example: 0, required: false, description: "Unix timestamp (seconds) when a delayed direct minting can be executed" })
+    delayTimestamp?: number;
 }
 
 export class RedemptionFeeData {
@@ -136,6 +140,13 @@ export class MaxLots {
     lotsLimited: boolean;
 }
 
+export class MintingCapInfo {
+    @ApiProperty({ example: "1234000000" })
+    totalSupply: string;
+    @ApiProperty({ example: "5000000000" })
+    mintingCap: string;
+}
+
 export class RedemptionFee {
     @ApiProperty({ example: "10" })
     redemptionFee: string;
@@ -143,6 +154,8 @@ export class RedemptionFee {
     maxRedemptionLots: number;
     @ApiProperty({ example: 212 })
     maxLotsOneRedemption: number;
+    @ApiProperty({ example: "1000000", description: "Minimum redeem amount in UBA (drops)" })
+    minimumRedeemAmountUBA?: string;
 }
 
 export class ProtocolFees {
@@ -218,6 +231,19 @@ export class NativeBalanceItem extends CommonBalance {
     wrapped?: string;
     valueUSD?: string;
     lots?: string;
+}
+
+export class NativeBalanceItemTokenAddress {
+    @ApiProperty({ example: "1,200.11" })
+    balance: string;
+    @ApiProperty({ example: "1200110000000000000", description: "Exact balance in base units (wei, drops, etc.)" })
+    exact: string;
+    @ApiProperty({ example: "CFLR" })
+    symbol: string;
+    @ApiProperty({ example: "0x7b7204684854Da846E49dEFd1408b52c4e0E3ce8" })
+    address: string;
+    @ApiProperty({ example: "wnat", description: "Category of the token: wnat, fasset, or collateral" })
+    type: string;
 }
 
 export class AgentPoolCommon {
@@ -327,9 +353,9 @@ export class AgentPoolItem extends AgentPoolCommon {
     })
     infoUrl: string;
     @ApiProperty({ example: "25,859.734" })
-    lifetimePoolClaimed?: string;
+    lifetimeClaimedPoolFormatted?: string;
     @ApiProperty({ example: "25,859.734" })
-    lifetimePoolClaimedUSD?: string;
+    lifetimeClaimedPoolUSDFormatted?: string;
     @ApiProperty({ example: "12345567" })
     userPoolTokensFull?: string;
 }
@@ -468,6 +494,8 @@ export class Progress {
     status: boolean;
     @ApiProperty({ example: false })
     defaulted: boolean;
+    @ApiProperty({ example: "0x1234..." })
+    txhash?: string;
     @ApiProperty({ example: "12345" })
     ticketID?: string;
     @ApiProperty({ example: "FTestXRP" })
@@ -488,6 +516,22 @@ export class Progress {
     underlyingTransactionData?: MintingTransaction;
     @ApiProperty({ example: true })
     redemptionBlocked?: boolean;
+    @ApiProperty({ example: true, description: "Whether this is a direct minting (no agent)" })
+    directMinting?: boolean;
+    @ApiProperty({ example: "EXECUTED", description: "Direct minting lifecycle status" })
+    directMintingStatus?: string;
+    @ApiProperty({ example: "0xabc123...", description: "EVM transaction hash of the event that resolved this direct minting (null until executed)", nullable: true })
+    evm_txhash?: string | null;
+    @ApiProperty({ example: true, description: "Whether this redemption used redeemWithTag" })
+    redeemWithTag?: boolean;
+    @ApiProperty({ example: "COMPLETED", description: "Redemption with tag lifecycle status" })
+    redeemStatus?: string;
+    @ApiProperty({ example: "12345", description: "XRP destination tag for redeemWithTag" })
+    destinationTag?: string;
+    @ApiProperty({ example: "500000", description: "Remaining amount in UBA (for incomplete redemptions)" })
+    remainingAmount?: string;
+    @ApiProperty({ example: 1711900800, description: "Timestamp (seconds) when a delayed direct minting can be executed", required: false })
+    delayTimestamp?: number | null;
 }
 
 export class submitTxResponse {
@@ -500,6 +544,8 @@ export class RequestRedemption {
     incomplete: boolean;
     @ApiProperty({ example: "30" })
     remainingLots?: string;
+    @ApiProperty({ example: "500000", description: "Remaining amount in UBA for amount-based incomplete redemptions" })
+    remainingAmountUBA?: string;
 }
 
 export class SelectedUTXO {
@@ -732,11 +778,40 @@ export class RedemptionQueue {
     maxLotsOneRedemption: number;
     @ApiProperty({ example: 55 })
     maxLots: number;
+    @ApiProperty({ example: "50000000", description: "Max redeemable amount in drops (single redemption)" })
+    maxAmountOneRedemptionDrops?: string;
+    @ApiProperty({ example: "50.0", description: "Max redeemable amount in XRP (single redemption)" })
+    maxAmountOneRedemptionXRP?: string;
+    @ApiProperty({ example: "500000000", description: "Total max redeemable amount in drops" })
+    maxAmountDrops?: string;
+    @ApiProperty({ example: "500.0", description: "Total max redeemable amount in XRP" })
+    maxAmountXRP?: string;
 }
 
 export class RedemptionOFT {
     @ApiProperty({ example: "0x123" })
     txhash: string;
+}
+
+export class ComposerFeeResponse {
+    @ApiProperty({ example: "10000" })
+    composerFeePPM: string;
+}
+
+export class RedemptionFeesResponse {
+    @ApiProperty({ example: "10000" })
+    composerFeePPM: string;
+    @ApiProperty({ example: "0x7b7204684854Da846E49dEFd1408b52c4e0E3ce8" })
+    executorAddress: string;
+    @ApiProperty({ example: "1000000000000000" })
+    executorFee: string;
+}
+
+export class RedeemerAccountResponse {
+    @ApiProperty({ example: "0x7b7204684854Da846E49dEFd1408b52c4e0E3ce8" })
+    address: string;
+    @ApiProperty({ type: [NativeBalanceItemTokenAddress] })
+    balances: NativeBalanceItemTokenAddress[];
 }
 
 export class OFTHistory {
@@ -776,6 +851,60 @@ export class OFTHistory {
     incomplete?: boolean;
     @ApiProperty({ example: "30" })
     remainingLots?: string;
+    @ApiProperty({ example: "500000", description: "Remaining amount in UBA for amount-based incomplete redemptions" })
+    remainingAmountUBA?: string;
     @ApiProperty({ example: true })
     redemptionBlocked?: boolean;
+}
+
+/** Response for the GET /api/directMintingInfo/:fasset endpoint. */
+export class DirectMintingInfoResponse {
+    @ApiProperty({ example: "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh", description: "Core Vault XRP payment address" })
+    paymentAddress: string;
+    @ApiProperty({ example: "500", description: "Minting fee in BIPS" })
+    mintingFeeBIPS: string;
+    @ApiProperty({ example: "1000000", description: "Minimum minting fee in UBA (drops)" })
+    minimumMintingFeeUBA: string;
+    @ApiProperty({ example: "0x1234...", description: "Executor address" })
+    executorAddress: string;
+    @ApiProperty({ example: "100000000000000000", description: "Executor fee in native wei" })
+    executorFee: string;
+    @ApiProperty({ example: "500000", description: "Executor fee in FAsset UBA (drops) for direct minting" })
+    fassetsExecutorFee: string;
+}
+
+/** A single minting tag and its associated data. */
+export class TagInfo {
+    @ApiProperty({ example: "12345", description: "Destination tag ID on XRP ledger" })
+    tagId: string;
+    @ApiProperty({ example: "0x1234...", description: "EVM address that receives minted FAssets" })
+    mintingRecipient: string;
+    @ApiProperty({ example: "0x5678...", description: "Allowed executor address for this tag" })
+    allowedExecutor: string;
+    @ApiProperty({ example: false, required: false, description: "Whether an allowed executor change is currently pending for this tag" })
+    executorChangePending?: boolean;
+    @ApiProperty({ example: "0xABCD...", required: false, description: "The new executor address that will become active after the pending change completes" })
+    pendingNewExecutor?: string;
+    @ApiProperty({ example: 1712000000, required: false, description: "Unix timestamp (seconds) when the pending executor change becomes active" })
+    executorChangeActiveAfterTs?: number;
+}
+
+/** Response for the GET /api/mintingRecipient/:fasset/:tagId endpoint. */
+export class MintingRecipientResponse {
+    @ApiProperty({ example: "0x1234...", description: "EVM address that receives minted FAssets for this tag" })
+    recipient: string;
+}
+
+/** Response for the GET /api/directMintingExecutor/:fasset endpoint. */
+export class DirectMintingExecutorResponse {
+    @ApiProperty({ example: "0x1234...", description: "Executor address" })
+    executorAddress: string;
+    @ApiProperty({ example: "100000000000000000", description: "Executor fee in native wei" })
+    executorFee: string;
+}
+
+/** Response for the GET /api/tagReservationFee/:fasset endpoint. */
+export class TagReservationFeeResponse {
+    @ApiProperty({ example: "100000000000000000", description: "Tag reservation fee in native wei" })
+    reservationFee: string;
 }

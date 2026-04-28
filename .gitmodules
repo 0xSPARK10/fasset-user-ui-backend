@@ -1,4 +1,0 @@
-[submodule "fasset-bots"]
-	path = fasset-bots
-	url = https://github.com/flare-foundation/fasset-bots.git
-	branch = main

@@ -67,6 +67,9 @@ export class RedemptionController {
     }
 
     @Get("requestRedemptionDefault/:fasset/:txhash/:amount/:userAddress")
+    @ApiResponse({
+        type: RequestRedemption,
+    })
     requestRedemptionDefault(
         @Param("fasset") fasset: string,
         @Param("txhash") txhash: string,
@@ -107,9 +110,6 @@ export class RedemptionController {
     }
 
     @Get("redemptionQueue/:fasset")
-    /*@ApiResponse({
-        type: [RedemptionFeeData],
-    })*/
     getRedemptionQueue(@Param("fasset") fasset: string): Promise<any> {
         try {
             return this.userService.getRedemptionQueue(fasset);

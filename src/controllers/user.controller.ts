@@ -1,4 +1,4 @@
-import { Controller, Get, HttpException, HttpStatus, Param } from "@nestjs/common";
+import { Controller, Get, HttpException, HttpStatus, Param, Query } from "@nestjs/common";
 import { ApiResponse, ApiTags } from "@nestjs/swagger";
 import { LotsException } from "src/exceptions/lots.exception";
 import {
@@ -7,8 +7,13 @@ import {
     AssetPrice,
     AvailableFassets,
     BestAgent,
+    DirectMintingExecutorResponse,
+    DirectMintingInfoResponse,
     ExecutorResponse,
+    MintingRecipientResponse,
     Progress,
+    TagInfo,
+    TagReservationFeeResponse,
     TimeData,
 } from "src/interfaces/requestResponse";
 import { logger } from "src/logger/winston.logger";
@@ -128,9 +133,9 @@ export class UserController {
     @ApiResponse({
         type: [Progress],
     })
-    getUserProgress(@Param("address") address: string): Promise<Progress[]> {
+    getUserProgress(@Param("address") address: string, @Query("xrpAddress") xrpAddress?: string): Promise<Progress[]> {
         try {
-            return this.historyService.getProgress(address);
+            return this.historyService.getProgress(address, xrpAddress);
         } catch (error) {
             logger.error(`Error in getUserProgress`, error);
             throw new HttpException(
@@ -144,9 +149,6 @@ export class UserController {
     }
 
     @Get("lifetimeClaimed/:address")
-    /*@ApiResponse({
-        type: [Progress],
-    })*/
     getLifetimeClaimed(@Param("address") address: string): Promise<any> {
         try {
             return this.userService.getLifetimeClaimed(address);
@@ -182,9 +184,6 @@ export class UserController {
     }
 
     @Get("fassetState")
-    /*@ApiResponse({
-        type: TimeData,
-    })*/
     getFassetState(): Promise<any> {
         try {
             return this.userService.checkStateFassets();
@@ -221,13 +220,128 @@ export class UserController {
 
     @Get("underlyingStatus/:fasset/:paymentReference")
     @ApiResponse({
-        type: ExecutorResponse,
+        type: Boolean,
     })
     getUnderlyingStatus(@Param("fasset") fasset: string, @Param("paymentReference") paymentReference: string): Promise<boolean> {
         try {
             return this.userService.mintingUnderlyingTransactionExists(fasset, paymentReference);
         } catch (error) {
             logger.error(`Error in getUnderlyigStatus for ${fasset} and ${paymentReference}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("tags/:fasset/:address")
+    @ApiResponse({
+        type: [TagInfo],
+    })
+    getTagsForAddress(@Param("fasset") fasset: string, @Param("address") address: string): Promise<TagInfo[]> {
+        try {
+            return this.userService.getTagsForAddress(fasset, address);
+        } catch (error) {
+            logger.error(`Error in getTagsForAddress for ${fasset} and ${address}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("tag/:fasset/:tagId")
+    @ApiResponse({
+        type: TagInfo,
+    })
+    getTagForAddress(@Param("fasset") fasset: string, @Param("tagId") tagId: string): Promise<TagInfo> {
+        try {
+            return this.userService.getTagForAddress(fasset, tagId);
+        } catch (error) {
+            logger.error(`Error in getTagForAddress for ${fasset} and ${tagId}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("mintingRecipient/:fasset/:tagId")
+    @ApiResponse({
+        type: MintingRecipientResponse,
+    })
+    getMintingRecipient(@Param("fasset") fasset: string, @Param("tagId") tagId: string): Promise<MintingRecipientResponse> {
+        try {
+            return this.userService.getMintingRecipient(fasset, tagId);
+        } catch (error) {
+            logger.error(`Error in getMintingRecipient for ${fasset} and ${tagId}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("directMintingExecutor/:fasset")
+    @ApiResponse({
+        type: DirectMintingExecutorResponse,
+    })
+    getDirectMintingExecutor(@Param("fasset") fasset: string): Promise<DirectMintingExecutorResponse> {
+        try {
+            return this.userService.getDirectMintingExecutor(fasset);
+        } catch (error) {
+            logger.error(`Error in getDirectMintingExecutor for ${fasset}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Get("directMintingInfo/:fasset")
+    @ApiResponse({
+        type: DirectMintingInfoResponse,
+    })
+    getDirectMintingInfo(@Param("fasset") fasset: string): Promise<DirectMintingInfoResponse> {
+        try {
+            return this.userService.getDirectMintingInfo(fasset);
+        } catch (error) {
+            logger.error(`Error in getDirectMintingInfo for ${fasset}`, error);
+            throw new HttpException(
+                {
+                    status: HttpStatus.INTERNAL_SERVER_ERROR,
+                    error: "Error: " + error.message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    /** Returns the tag reservation fee from the MintingTagManager contract for the given fasset. */
+    @Get("tagReservationFee/:fasset")
+    @ApiResponse({
+        type: TagReservationFeeResponse,
+    })
+    getTagReservationFee(@Param("fasset") fasset: string): Promise<TagReservationFeeResponse> {
+        try {
+            return this.userService.getTagReservationFee(fasset);
+        } catch (error) {
+            logger.error(`Error in getTagReservationFee for ${fasset}`, error);
             throw new HttpException(
                 {
                     status: HttpStatus.INTERNAL_SERVER_ERROR,

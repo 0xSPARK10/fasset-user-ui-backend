@@ -18,3 +18,15 @@ src/redeemerExecutors
 .env
 
 test-data/
+
+.opencode
+task.md
+style.md
+
+.devcontainer
+.claude
+.reference-files
+TASK.md
+CLAUDE.md
+AUDIT.md
+changes-report.md

@@ -97,10 +97,14 @@ export class PoolController {
     }
 
     @Get("pools/:fasset/:address/:poolAddress")
+    @ApiResponse({
+        type: AgentPoolItem,
+    })
     getPoolsSpecific(@Param("fasset") fasset: string, @Param("address") address: string, @Param("poolAddress") poolAddress: string): Promise<AgentPoolItem> {
         try {
             return this.poolService.getPoolsSpecific(fasset, address, poolAddress);
         } catch (error) {
+            logger.error(`Error in getPoolsSpecific for ${fasset}, ${address} and ${poolAddress}`, error);
             throw new HttpException(
                 {
                     status: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -112,10 +116,14 @@ export class PoolController {
     }
 
     @Get("pools/:fasset/:poolAddress")
+    @ApiResponse({
+        type: AgentPoolItem,
+    })
     getAgentSpecific(@Param("fasset") fasset: string, @Param("poolAddress") poolAddress: string): Promise<AgentPoolItem> {
         try {
             return this.poolService.getAgentSpecific(fasset, poolAddress);
         } catch (error) {
+            logger.error(`Error in getAgentSpecific for ${fasset} and ${poolAddress}`, error);
             throw new HttpException(
                 {
                     status: HttpStatus.INTERNAL_SERVER_ERROR,

@@ -1,0 +1,51 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "TransactionAttestation",
+  "sourceName": "contracts/assetManager/library/TransactionAttestation.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "AddressValidityNotProven",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "BlockHeightNotProven",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidChain",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "LegalPaymentNotProven",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NonPaymentNotProven",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OnlyProofOwner",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PaymentFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TransactionNotProven",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220a97c71058b0c4d21337becf2b356606754a8ec093e54e3af75edef00df280f4564736f6c634300081b0033",
+  "deployedBytecode": "0x73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220a97c71058b0c4d21337becf2b356606754a8ec093e54e3af75edef00df280f4564736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

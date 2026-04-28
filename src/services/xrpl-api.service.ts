@@ -1,8 +1,5 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
-import { readFileSync } from "fs";
-import { join } from "path";
-import { Secrets } from "@flarelabs/fasset-bots-core";
 import { ConfigService } from "@nestjs/config";
 import type { AccountInfoResponse } from "xrpl";
 
@@ -20,28 +17,20 @@ export interface AccountFlags {
 
 @Injectable()
 export class XRPLApiService implements OnModuleInit {
-    private botPath: string;
-    private network: string;
     private client: AxiosInstance;
-    constructor(private readonly configService: ConfigService) {
-        this.botPath = this.configService.get<string>("BOT_CONFIG_PATH");
-        this.network = this.configService.get<string>("NETWORK", "coston");
-    }
+    constructor(private readonly configService: ConfigService) {}
+
+    /** Initializes the XRPL HTTP client using XRP_WALLET_URLS and XRP_RPC env vars */
     async onModuleInit() {
-        let pathForConfig = this.botPath;
-        const appType = this.configService.get<string>("APP_TYPE", "dev");
-        if (!pathForConfig) {
-            pathForConfig = this.network + "-bot.json";
-        }
-        const filePathSecrets = join(__dirname, "../..", "src", "secrets.json");
-        const filePathConfig = join(__dirname, "../..", "src", pathForConfig);
-        const configFileContent = readFileSync(filePathConfig, "utf-8");
-        const secrets = await Secrets.load(filePathSecrets);
-        const config = JSON.parse(configFileContent);
-        const fassetConfig = config.fAssets[appType == "dev" ? "FTestXRP" : "FXRP"];
-        const apiKey = secrets.data.apiKey.indexer[0];
-        const verifier = fassetConfig.walletUrls[0];
-        this.client = axios.create(this.createAxiosConfig(verifier, apiKey));
+        const walletUrl = (this.configService.get<string>("XRP_WALLET_URLS") || "")
+            .split(",")
+            .map((u) => u.trim())
+            .filter(Boolean)[0];
+        const apiKey = (this.configService.get<string>("XRP_RPC") || "")
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean)[0];
+        this.client = axios.create(this.createAxiosConfig(walletUrl, apiKey));
     }
 
     createAxiosConfig(url: string, apiKey?: string) {

@@ -1,13 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { CollateralClass, InfoBotCommands, TokenPriceReader, UserBotCommands } from "@flarelabs/fasset-bots-core";
-import { IRelayInstance } from "@flarelabs/fasset-bots-core/types";
-import { MAX_BIPS, artifacts, formatFixed, toBN, toBNExp } from "@flarelabs/fasset-bots-core/utils";
 import { EntityManager, MikroORM } from "@mikro-orm/core";
 import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { join } from "path";
 import { Pool } from "../entities/Pool";
 import * as cron from "node-cron";
-import { HttpService } from "@nestjs/axios";
 import { ConfigService } from "@nestjs/config";
 import { Liveness } from "../entities/AgentLiveness";
 import { readFileSync } from "fs";
@@ -18,7 +14,7 @@ import {
     AssetManagerFasset,
     FassetDecimals,
     PoolRewards,
-    Price,
+    PriceBigInt,
     SupplyFasset,
     SupplyTotalCollateral,
     TimeData,
@@ -27,27 +23,45 @@ import {
 } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
 import { Collateral } from "src/entities/Collaterals";
-import { calculateOvercollateralizationPercentage, calculateUSDValue, getDefaultTimeData, sumUsdStrings, toBNDecimal } from "src/utils/utils";
+import {
+    calculateOvercollateralizationPercentage,
+    calculateUSDValueBigInt,
+    formatFixedBigInt,
+    bigintPow10,
+    getDefaultTimeData,
+    sumUsdStrings,
+    toBNDecimalBigInt,
+} from "src/utils/utils";
 import { ExternalApiService } from "./external.api.service";
 import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
-import { Secrets } from "@flarelabs/fasset-bots-core";
 import { TimeDataService } from "./time.data.service";
+import { ContractService } from "./contract.service";
+import { FassetConfigService } from "./fasset.config.service";
+import type { IIAssetManager, IFAsset, IPriceReader, ICollateralPool, IAgentOwnerRegistry } from "../typechain-ethers-v6";
+import { IPriceReader__factory, ICollateralPool__factory, ICollateralPoolToken__factory, IAgentOwnerRegistry__factory } from "../typechain-ethers-v6";
+import { EthersService } from "./ethers.service";
 
-const IRelay = artifacts.require("IRelay");
-const IERC20 = artifacts.require("IERC20Metadata");
-const CollateralPool = artifacts.require("CollateralPool");
+/** VAULT collateral class constant (matches CollateralClass.VAULT from fasset-bots-core) */
+const COLLATERAL_CLASS_VAULT = 2;
+
+/** 10_000 BIPS = 100 % */
+const MAX_BIPS = 10_000;
 
 @Injectable()
 export class BotService implements OnModuleInit {
-    private botMap: Map<string, UserBotCommands> = new Map();
-    private infoBotMap: Map<string, InfoBotCommands> = new Map();
-    private relay: IRelayInstance;
+    /** Maps fasset name → IIAssetManager contract instance */
+    private assetManagerMap: Map<string, IIAssetManager> = new Map();
+    /** Maps fasset name → IFAsset contract instance */
+    private fAssetMap: Map<string, IFAsset> = new Map();
+    /** Maps fasset name → IAgentOwnerRegistry contract instance */
+    private agentOwnerRegistryMap: Map<string, IAgentOwnerRegistry> = new Map();
+    /** Maps fasset name → IPriceReader contract obtained from settings.priceReader */
+    private priceReaderMap: Map<string, IPriceReader> = new Map();
     private isRunning: boolean = false;
     private isRunningRedQueue: boolean = false;
     private isRunningTimeData: boolean = false;
     private costonBotPath: string;
     private fassetSymbol: Map<string, string> = new Map();
-    private secrets: Secrets;
     em: EntityManager;
     fassetList: string[] = [];
     ecosystemTVL: string;
@@ -95,11 +109,13 @@ export class BotService implements OnModuleInit {
 
     constructor(
         private readonly orm: MikroORM,
-        private readonly httpService: HttpService,
         private readonly configService: ConfigService,
         private readonly externalApiService: ExternalApiService,
         @Inject(CACHE_MANAGER) private cacheManager: Cache,
-        private readonly timeDataService: TimeDataService
+        private readonly timeDataService: TimeDataService,
+        private readonly contractService: ContractService,
+        private readonly fassetConfigService: FassetConfigService,
+        private readonly ethersService: EthersService
     ) {
         this.costonBotPath = this.configService.get<string>("BOT_CONFIG_PATH");
         this.envType = this.configService.get<string>("APP_TYPE");
@@ -113,35 +129,56 @@ export class BotService implements OnModuleInit {
         if (!pathForConfig) {
             pathForConfig = this.network + "-bot.json";
         }
-        // Initialize the variable here
-        const filePathSecrets = join(__dirname, "../..", "src", "secrets.json");
         const filePathConfig = join(__dirname, "../..", "src", pathForConfig);
-        const userDataDirPath = join(__dirname, "../..", "src", "userDataDir");
 
         const configFileContent = readFileSync(filePathConfig, "utf-8");
         const config = JSON.parse(configFileContent);
         const fassets = Object.keys(config.fAssets);
-        // eslint-disable-next-line @typescript-eslint/await-thenable
-        this.secrets = await Secrets.load(filePathSecrets);
         this.ecosystemTVL = "0";
+
+        const provider = this.ethersService.getProvider();
 
         for (const fasset of fassets) {
             logger.info(`Initializing BotService for fasset ${fasset}`);
             this.fassetList.push(fasset);
-            this.botMap.set(fasset, await UserBotCommands.create(filePathSecrets, filePathConfig, fasset, userDataDirPath));
-            this.infoBotMap.set(fasset, await InfoBotCommands.create(this.secrets, filePathConfig, fasset));
-            const settings = await this.infoBotMap.get(fasset).context.assetManager.getSettings();
+
+            // Get AssetManager contract from ContractService
+            const assetManager = this.contractService.get<IIAssetManager>(`AssetManager_${fasset}`);
+            this.assetManagerMap.set(fasset, assetManager);
+
+            // Get FAsset contract from ContractService (name matches fasset name directly in deployments)
+            const fAsset = this.contractService.get<IFAsset>(fasset);
+            this.fAssetMap.set(fasset, fAsset);
+            const settings = await assetManager.getSettings();
+
+            // Build the asset manager address
+            const amAddress = typeof assetManager.target === "string" ? assetManager.target : await assetManager.getAddress();
             this.assetManagerList.push({
                 fasset: fasset,
-                assetManager: this.infoBotMap.get(fasset).context.assetManager.address,
+                assetManager: amAddress,
                 decimals: Number(settings.assetDecimals),
             });
-            this.assetManagerAddressList.push(this.infoBotMap.get(fasset).context.assetManager.address);
-            this.fassetDecimals.push({ fasset: fasset, decimals: (await this.infoBotMap.get(fasset).context.fAsset.decimals()).toNumber() });
-            this.fassetSymbol.set(fasset, await this.infoBotMap.get(fasset).context.fAsset.assetSymbol());
-            const collateralTypes = await this.infoBotMap.get(fasset).context.assetManager.getCollateralTypes();
+            this.assetManagerAddressList.push(amAddress);
+
+            // Store fasset decimals from the fAsset contract
+            const fAssetDecimals = await fAsset.decimals();
+            this.fassetDecimals.push({ fasset: fasset, decimals: Number(fAssetDecimals) });
+
+            // Store fasset symbol from the fAsset contract
+            this.fassetSymbol.set(fasset, await fAsset.assetSymbol());
+
+            // Create PriceReader from settings.priceReader address
+            const priceReader = IPriceReader__factory.connect(settings.priceReader as string, provider);
+            this.priceReaderMap.set(fasset, priceReader);
+
+            // Create AgentOwnerRegistry from settings.agentOwnerRegistry address
+            const agentOwnerRegistry = IAgentOwnerRegistry__factory.connect(settings.agentOwnerRegistry as string, provider);
+            this.agentOwnerRegistryMap.set(fasset, agentOwnerRegistry);
+
+            // Collect collateral token FTSO symbols
+            const collateralTypes = await assetManager.getCollateralTypes();
             for (const c of collateralTypes) {
-                if (Number(c.collateralClass) != CollateralClass.VAULT) {
+                if (Number(c.collateralClass) != COLLATERAL_CLASS_VAULT) {
                     continue;
                 }
                 if (Number(c.validUntil) != 0 && Number(c.validUntil) * 1000 < Date.now()) {
@@ -153,13 +190,7 @@ export class BotService implements OnModuleInit {
             }
             await this.updateRedemptionQueue(fasset);
         }
-        const contractPath = config.contractsJsonFile;
-        const filePathContracts = join(__dirname, "../..", "src", contractPath);
-        const data = JSON.parse(readFileSync(filePathContracts, "utf-8"));
-        // Find the object with name "Relay"
-        const relay = data.find((entry) => entry.name === "Relay");
-        this.relay = await IRelay.at(relay.address);
-        //this.lastEventBlock = 17581700;
+
         await this.getPools();
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.getTimeData();
@@ -214,6 +245,32 @@ export class BotService implements OnModuleInit {
         }
     }
 
+    /**
+     * Fetches all agent vault addresses from the asset manager using pagination.
+     * Equivalent to the old InfoBotCommands.getAllAgents().
+     */
+    private async getAllAgentAddresses(assetManager: IIAssetManager, chunkSize = 10): Promise<string[]> {
+        const result: string[] = [];
+        let start = 0;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            const [list] = await assetManager.getAllAgents(start, start + chunkSize);
+            result.splice(result.length, 0, ...list);
+            if (list.length < chunkSize) break;
+            start += list.length;
+        }
+        return result;
+    }
+
+    /**
+     * Get a price from the PriceReader contract. Returns { price, decimals }.
+     * The price is already in its native precision (not scaled by 1e18 like the old code does for USD).
+     */
+    private async getPrice(priceReader: IPriceReader, symbol: string): Promise<{ price: bigint; decimals: number }> {
+        const [_price, , _priceDecimals] = await priceReader.getPrice(symbol);
+        return { price: _price, decimals: Number(_priceDecimals) };
+    }
+
     async getPools(): Promise<void> {
         logger.info(`Updating pools`);
         let currentTVL = "0";
@@ -252,21 +309,30 @@ export class BotService implements OnModuleInit {
         const topPools = await this.externalApiService.getBestPerformingPools(4, "500000000000000000000000");
         const bestPools: TopPoolData[] = [];
         //let overCollaterazied = "0";
-        for (const [fasset, infoBot] of this.infoBotMap.entries()) {
-            let mintedUBA = toBN(0);
+
+        const nativeSymbol = this.fassetConfigService.getNativeSymbol();
+        const provider = this.ethersService.getProvider();
+
+        for (const fasset of this.fassetList) {
+            const assetManager = this.assetManagerMap.get(fasset);
+            const fAssetContract = this.fAssetMap.get(fasset);
+            const priceReader = this.priceReaderMap.get(fasset);
+            const agentOwnerRegistry = this.agentOwnerRegistryMap.get(fasset);
+
+            let mintedUBA = 0n;
             //TODO: make it in parallel (when mysql db)
             const start = Date.now();
             const [agents, settings, collaterals] = await Promise.all([
-                infoBot.getAllAgents(),
-                infoBot.context.assetManager.getSettings(),
-                infoBot.context.assetManager.getCollateralTypes(),
+                this.getAllAgentAddresses(assetManager),
+                assetManager.getSettings(),
+                assetManager.getCollateralTypes(),
             ]);
             //console.log(collaterals);
             logger.info(`Updating ${agents.length} pools for fasset ${fasset} ...`);
-            let mintedReservedUBA = toBN(0);
+            let mintedReservedUBA = 0n;
 
-            const lotSizeUBA = toBN(settings.lotSizeAMG).mul(toBN(settings.assetMintingGranularityUBA));
-            const lotSize = (await infoBot.getLotSize()) / 10 ** Number(settings.assetDecimals);
+            const lotSizeUBA = settings.lotSizeAMG * settings.assetMintingGranularityUBA;
+            const lotSize = Number(settings.lotSizeAMG * settings.assetMintingGranularityUBA) / 10 ** Number(settings.assetDecimals);
             const supplyFa: SupplyFasset = {
                 fasset: fasset,
                 supply: "0",
@@ -280,17 +346,16 @@ export class BotService implements OnModuleInit {
                 mintingCap: "0",
                 mintingCapUSD: "0",
             };
-            const mintingCap = toBN(settings.mintingCapAMG).mul(toBN(settings.assetMintingGranularityUBA));
-            const priceReader = await TokenPriceReader.create(settings);
+            const mintingCap = settings.mintingCapAMG * settings.assetMintingGranularityUBA;
 
             //TODO Add native token symbol to .env
-            const cflrPrice = await priceReader.getPrice(infoBot.context.nativeChainInfo.tokenSymbol, false, settings.maxTrustedPriceAgeSeconds);
-            const priceUSD = cflrPrice.price.mul(toBNExp(1, 18));
-            const prices: Price[] = [
+            const cflrPriceData = await this.getPrice(priceReader, nativeSymbol);
+            const priceUSD = cflrPriceData.price * bigintPow10(18);
+            const prices: PriceBigInt[] = [
                 {
-                    symbol: infoBot.context.nativeChainInfo.tokenSymbol,
+                    symbol: nativeSymbol,
                     price: priceUSD,
-                    decimals: Number(cflrPrice.decimals),
+                    decimals: cflrPriceData.decimals,
                 },
             ];
 
@@ -338,17 +403,18 @@ export class BotService implements OnModuleInit {
             const agentsLivenessToDelete = agentsLiveness.filter((agent) => !newAgentAddresses.has(agent.vaultAddress));
             const agentsToUpdate = existingAgents.filter((agent) => newAgentAddresses.has(agent.vaultAddress));
             // prefetch agentinfo
-            const newAgentInfoPromises = newAgents.map((agent) => infoBot.context.assetManager.getAgentInfo(agent));
+            const newAgentInfoPromises = newAgents.map((agent) => assetManager.getAgentInfo(agent));
             const newAgentInfos = await Promise.all(newAgentInfoPromises);
             // map
             const newAgentInfoMap = new Map(newAgents.map((agent, index) => [agent, newAgentInfos[index]]));
             // prefetch additional agent data
             const newAgentAdditionalInfoPromises = newAgents.map((agent) => {
                 const info = newAgentInfoMap.get(agent);
+                const poolContract = ICollateralPool__factory.connect(info.collateralPool as string, provider);
                 return Promise.all([
-                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentName(info.ownerManagementAddress),
-                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentIconUrl(info.ownerManagementAddress),
-                    CollateralPool.at(info.collateralPool),
+                    agentOwnerRegistry.getAgentName(info.ownerManagementAddress),
+                    agentOwnerRegistry.getAgentIconUrl(info.ownerManagementAddress),
+                    poolContract,
                     this.externalApiService.getMints(agent).catch((error) => {
                         logger.error(`Error in getMints`, error);
                         return 0;
@@ -361,9 +427,9 @@ export class BotService implements OnModuleInit {
                         logger.error(`Error in getRedemptionSuccessRate`, error);
                         return 0;
                     }),
-                    infoBot.context.assetManager.getCollateralType(CollateralClass.VAULT, info.vaultCollateralToken),
-                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentDescription(info.ownerManagementAddress),
-                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentTermsOfUseUrl(info.ownerManagementAddress),
+                    assetManager.getCollateralType(COLLATERAL_CLASS_VAULT, info.vaultCollateralToken),
+                    agentOwnerRegistry.getAgentDescription(info.ownerManagementAddress),
+                    agentOwnerRegistry.getAgentTermsOfUseUrl(info.ownerManagementAddress),
                 ]);
             });
             const newAgentAdditionalInfos = await Promise.all(newAgentAdditionalInfoPromises);
@@ -374,7 +440,8 @@ export class BotService implements OnModuleInit {
                     const [agentName, url, pool, mintCount, numLiquidations, redeemRate, vaultCollateralType, description, infoUrl] =
                         newAgentAdditionalInfos[i];
 
-                    const poolToken = await IERC20.at(await pool.poolToken());
+                    const poolTokenAddress = await (pool as ICollateralPool).poolToken();
+                    const poolToken = ICollateralPoolToken__factory.connect(poolTokenAddress, provider);
                     const poolcr = Number(info.poolCollateralRatioBIPS) / MAX_BIPS;
                     const vaultcr = Number(info.vaultCollateralRatioBIPS) / MAX_BIPS;
                     const poolExitCR = Number(info.poolExitCollateralRatioBIPS) / MAX_BIPS;
@@ -384,25 +451,25 @@ export class BotService implements OnModuleInit {
                     const mintingVaultCR = Number(info.mintingVaultCollateralRatioBIPS) / MAX_BIPS;
                     let existingPrice = prices.find((p) => p.symbol === vaultCollateralType.tokenFtsoSymbol);
                     if (!existingPrice) {
-                        const priceVault = await priceReader.getPrice(vaultCollateralType.tokenFtsoSymbol, false, settings.maxTrustedPriceAgeSeconds);
-                        const priceVaultUSD = priceVault.price.mul(toBNExp(1, 18));
+                        const priceVault = await this.getPrice(priceReader, vaultCollateralType.tokenFtsoSymbol);
+                        const priceVaultUSD = priceVault.price * bigintPow10(18);
                         existingPrice = {
                             symbol: vaultCollateralType.tokenFtsoSymbol,
                             price: priceVaultUSD,
-                            decimals: Number(priceVault.decimals),
+                            decimals: priceVault.decimals,
                         };
                         prices.push(existingPrice);
                     }
-                    const totalPoolCollateral = formatFixed(toBN(info.totalPoolCollateralNATWei), 18, { decimals: 3, groupDigits: true, groupSeparator: "," });
+                    const totalPoolCollateral = formatFixedBigInt(info.totalPoolCollateralNATWei, 18, { decimals: 3, groupDigits: true, groupSeparator: "," });
                     tvlpoolsnat = sumUsdStrings(tvlpoolsnat, totalPoolCollateral);
-                    const vaultCollateral = formatFixed(toBN(info.totalVaultCollateralWei), Number(vaultCollateralType.decimals), {
+                    const vaultCollateral = formatFixedBigInt(info.totalVaultCollateralWei, Number(vaultCollateralType.decimals), {
                         decimals: 3,
                         groupDigits: true,
                         groupSeparator: ",",
                     });
-                    const poolOnlyCollateralUSD = calculateUSDValue(toBN(info.totalPoolCollateralNATWei), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
-                    const vaultOnlyCollateralUSD = calculateUSDValue(
-                        toBN(info.totalVaultCollateralWei),
+                    const poolOnlyCollateralUSD = calculateUSDValueBigInt(info.totalPoolCollateralNATWei, priceUSD, 18 + cflrPriceData.decimals, 18, 3);
+                    const vaultOnlyCollateralUSD = calculateUSDValueBigInt(
+                        info.totalVaultCollateralWei,
                         existingPrice.price,
                         Number(vaultCollateralType.decimals) + existingPrice.decimals,
                         18,
@@ -411,60 +478,54 @@ export class BotService implements OnModuleInit {
                     const totalCollateralUSD = sumUsdStrings(poolOnlyCollateralUSD, vaultOnlyCollateralUSD);
                     totalCollateral = sumUsdStrings(totalCollateral, totalCollateralUSD);
                     currentTVL = sumUsdStrings(currentTVL, poolOnlyCollateralUSD);
-                    const poolNatBalance = toBN(await pool.totalCollateral());
-                    const totalSupply = toBN(await poolToken.totalSupply());
-                    const agentPoolCollateral =
-                        totalSupply.toString() === "0"
-                            ? toBN(0)
-                            : toBN(await poolToken.balanceOf(agent))
-                                  .mul(poolNatBalance)
-                                  .div(totalSupply);
-                    const agentPoolCollateralUSDFormatted = calculateUSDValue(toBN(agentPoolCollateral), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
+                    const poolNatBalance = await (pool as ICollateralPool).totalCollateral();
+                    const totalSupply = await poolToken.totalSupply();
+                    const agentPoolCollateralVal = totalSupply === 0n ? 0n : ((await poolToken.balanceOf(agent)) * poolNatBalance) / totalSupply;
+                    const agentPoolCollateralUSDFormatted = calculateUSDValueBigInt(agentPoolCollateralVal, priceUSD, 18 + cflrPriceData.decimals, 18, 3);
                     agentPoolCollateralOnly = sumUsdStrings(agentPoolCollateralOnly, agentPoolCollateralUSDFormatted);
                     agentPoolCollateralOnly = sumUsdStrings(agentPoolCollateralOnly, vaultOnlyCollateralUSD);
                     //Check if in liq
                     if (Number(info.status) == 2 || Number(info.status) == 3) {
                         agentsLiq++;
                     }
-                    //infoBot.context.
                     //TODO change so price calculation works
                     const remainingAssets = Number(info.freeCollateralLots) * lotSize;
                     let existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
                     if (!existingPriceAsset) {
-                        const priceAsset = await priceReader.getPrice(this.fassetSymbol.get(fasset), false, settings.maxTrustedPriceAgeSeconds);
+                        const priceAsset = await this.getPrice(priceReader, this.fassetSymbol.get(fasset));
                         existingPriceAsset = {
                             symbol: this.fassetSymbol.get(fasset),
                             price: priceAsset.price,
-                            decimals: Number(priceAsset.decimals),
+                            decimals: priceAsset.decimals,
                         };
                         prices.push(existingPriceAsset);
                     }
-                    const remainingUSDFormatted = calculateUSDValue(
-                        toBN(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals))),
+                    const remainingUSDFormatted = calculateUSDValueBigInt(
+                        BigInt(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals))),
                         existingPriceAsset.price,
                         existingPriceAsset.decimals,
                         Number(settings.assetDecimals),
                         3
                     );
-                    const mintedUSDFormatted = calculateUSDValue(
-                        toBN(info.mintedUBA),
+                    const mintedUSDFormatted = calculateUSDValueBigInt(
+                        info.mintedUBA,
                         existingPriceAsset.price,
                         existingPriceAsset.decimals,
                         Number(settings.assetDecimals),
                         3
                     );
                     mintedAll = sumUsdStrings(mintedAll, mintedUSDFormatted);
-                    const mintedReservedLots = toBN(info.mintedUBA).add(toBN(info.reservedUBA)).div(lotSizeUBA);
-                    const mintedAssets = formatFixed(toBN(info.mintedUBA), Number(settings.assetDecimals), {
+                    const mintedReservedLots = (info.mintedUBA + info.reservedUBA) / lotSizeUBA;
+                    const mintedAssets = formatFixedBigInt(info.mintedUBA, Number(settings.assetDecimals), {
                         decimals: fasset.includes("XRP") ? 3 : 8,
                         groupDigits: true,
                         groupSeparator: ",",
                     });
-                    mintedReservedUBA = mintedReservedUBA.add(toBN(info.mintedUBA)).add(toBN(info.reservedUBA));
-                    mintedUBA = mintedUBA.add(toBN(info.mintedUBA));
+                    mintedReservedUBA = mintedReservedUBA + info.mintedUBA + info.reservedUBA;
+                    mintedUBA = mintedUBA + info.mintedUBA;
                     //supplyFa.minted = sumUsdStrings(supplyFa.minted, mintedUSDFormatted);
-                    const allLots = mintedReservedLots.toNumber() + Number(info.freeCollateralLots);
-                    if (mintingCap.toString() === "0") {
+                    const allLots = Number(mintedReservedLots) + Number(info.freeCollateralLots);
+                    if (mintingCap === 0n) {
                         if ((Number(info.status) == 0 || Number(info.status) == 1) && info.publiclyAvailable == true) {
                             supplyFa.availableToMintLots = supplyFa.availableToMintLots + Number(info.freeCollateralLots);
                             supplyFa.availableToMintUSD = sumUsdStrings(supplyFa.availableToMintUSD, remainingUSDFormatted);
@@ -478,13 +539,13 @@ export class BotService implements OnModuleInit {
                     const limitUSD = sumUsdStrings(mintedUSDFormatted, remainingUSDFormatted);
 
                     //Track total collateral for native token and vault collateral
-                    const existingCollateralNative = supplyCollateral.find((asset) => asset.symbol === infoBot.context.nativeChainInfo.tokenSymbol);
+                    const existingCollateralNative = supplyCollateral.find((asset) => asset.symbol === nativeSymbol);
                     if (existingCollateralNative) {
                         existingCollateralNative.supply = sumUsdStrings(existingCollateralNative.supply, totalPoolCollateral);
                         existingCollateralNative.supplyUSD = sumUsdStrings(existingCollateralNative.supplyUSD, poolOnlyCollateralUSD);
                     } else {
                         supplyCollateral.push({
-                            symbol: infoBot.context.nativeChainInfo.tokenSymbol,
+                            symbol: nativeSymbol,
                             supply: totalPoolCollateral,
                             supplyUSD: poolOnlyCollateralUSD,
                         });
@@ -501,10 +562,10 @@ export class BotService implements OnModuleInit {
                     const agentPool = new Pool(
                         agent,
                         fasset,
-                        info.collateralPool,
-                        poolToken.address,
+                        info.collateralPool as string,
+                        poolTokenAddress,
                         agentName,
-                        this.botMap.get(fasset).fAssetSymbol,
+                        fasset,
                         poolcr,
                         vaultcr,
                         poolExitCR,
@@ -524,7 +585,7 @@ export class BotService implements OnModuleInit {
                         info.publiclyAvailable,
                         mintingPoolCR,
                         mintingVaultCR,
-                        info.vaultCollateralToken,
+                        info.vaultCollateralToken as string,
                         description,
                         mintedAssets,
                         mintedUSDFormatted,
@@ -562,7 +623,7 @@ export class BotService implements OnModuleInit {
             }
 
             // prefetch
-            const agentsToUpdateInfoPromises = agentsToUpdate.map((agent) => infoBot.context.assetManager.getAgentInfo(agent.vaultAddress));
+            const agentsToUpdateInfoPromises = agentsToUpdate.map((agent) => assetManager.getAgentInfo(agent.vaultAddress));
             const agentsToUpdateInfos = await Promise.all(agentsToUpdateInfoPromises);
             // map
             const agentsToUpdateInfoMap = new Map(agentsToUpdate.map((agent, index) => [agent, agentsToUpdateInfos[index]]));
@@ -583,11 +644,11 @@ export class BotService implements OnModuleInit {
                         logger.error(`Error in getRedemptionSuccessRate`, error);
                         return 0;
                     }),
-                    infoBot.context.assetManager.getCollateralType(CollateralClass.VAULT, info.vaultCollateralToken),
-                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentName(info.ownerManagementAddress),
-                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentIconUrl(info.ownerManagementAddress),
-                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentTermsOfUseUrl(info.ownerManagementAddress),
-                    this.botMap.get(fasset).context.agentOwnerRegistry.getAgentDescription(info.ownerManagementAddress),
+                    assetManager.getCollateralType(COLLATERAL_CLASS_VAULT, info.vaultCollateralToken),
+                    agentOwnerRegistry.getAgentName(info.ownerManagementAddress),
+                    agentOwnerRegistry.getAgentIconUrl(info.ownerManagementAddress),
+                    agentOwnerRegistry.getAgentTermsOfUseUrl(info.ownerManagementAddress),
+                    agentOwnerRegistry.getAgentDescription(info.ownerManagementAddress),
                 ]);
             });
             const agentsToUpdateAdditionalInfos = await Promise.all(agentsToUpdateAdditionalInfoPromises);
@@ -600,16 +661,12 @@ export class BotService implements OnModuleInit {
                     const info = agentsToUpdateInfoMap.get(agent);
                     const [mintCount, numLiquidations, redeemRate, vaultCollateralType, name, urlIcon, tos, desc] = agentsToUpdateAdditionalInfos[i];
                     agent.description = desc;
-                    /*if (agent.description == null) {
-                        const description = await this.botMap.get(fasset).context.agentOwnerRegistry.getAgentDescription(info.ownerManagementAddress);
-                        agent.description = description;
-                    }*/
-                    const pool = await CollateralPool.at(agent.poolAddress);
+                    const pool = ICollateralPool__factory.connect(agent.poolAddress, provider);
                     const poolcr = Number(info.poolCollateralRatioBIPS) / MAX_BIPS;
                     const vaultcr = Number(info.vaultCollateralRatioBIPS) / MAX_BIPS;
                     const poolExitCR = Number(info.poolExitCollateralRatioBIPS) / MAX_BIPS;
-                    const totalPoolCollateral = formatFixed(toBN(info.totalPoolCollateralNATWei), 18, { decimals: 3, groupDigits: true, groupSeparator: "," });
-                    const vaultCollateral = formatFixed(toBN(info.totalVaultCollateralWei), agent.vaultCollateralTokenDecimals, {
+                    const totalPoolCollateral = formatFixedBigInt(info.totalPoolCollateralNATWei, 18, { decimals: 3, groupDigits: true, groupSeparator: "," });
+                    const vaultCollateral = formatFixedBigInt(info.totalVaultCollateralWei, agent.vaultCollateralTokenDecimals, {
                         decimals: 3,
                         groupDigits: true,
                         groupSeparator: ",",
@@ -620,18 +677,18 @@ export class BotService implements OnModuleInit {
                     let existingPrice = prices.find((p) => p.symbol === vaultCollateralType.tokenFtsoSymbol);
 
                     if (!existingPrice) {
-                        const priceVault = await priceReader.getPrice(vaultCollateralType.tokenFtsoSymbol, false, settings.maxTrustedPriceAgeSeconds);
-                        const priceVaultUSD = priceVault.price.mul(toBNExp(1, 18));
+                        const priceVault = await this.getPrice(priceReader, vaultCollateralType.tokenFtsoSymbol);
+                        const priceVaultUSD = priceVault.price * bigintPow10(18);
                         existingPrice = {
                             symbol: vaultCollateralType.tokenFtsoSymbol,
                             price: priceVaultUSD,
-                            decimals: Number(priceVault.decimals),
+                            decimals: priceVault.decimals,
                         };
                         prices.push(existingPrice);
                     }
-                    const poolOnlyCollateralUSD = calculateUSDValue(toBN(info.totalPoolCollateralNATWei), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
-                    const vaultOnlyCollateralUSD = calculateUSDValue(
-                        toBN(info.totalVaultCollateralWei),
+                    const poolOnlyCollateralUSD = calculateUSDValueBigInt(info.totalPoolCollateralNATWei, priceUSD, 18 + cflrPriceData.decimals, 18, 3);
+                    const vaultOnlyCollateralUSD = calculateUSDValueBigInt(
+                        info.totalVaultCollateralWei,
                         existingPrice.price,
                         Number(vaultCollateralType.decimals) + existingPrice.decimals,
                         18,
@@ -641,16 +698,12 @@ export class BotService implements OnModuleInit {
                     totalCollateral = sumUsdStrings(totalCollateral, totalCollateralUSD);
                     tvlpoolsnat = sumUsdStrings(tvlpoolsnat, totalPoolCollateral);
                     currentTVL = sumUsdStrings(currentTVL, poolOnlyCollateralUSD);
-                    const poolToken = await IERC20.at(await pool.poolToken());
-                    const poolNatBalance = toBN(await pool.totalCollateral());
-                    const totalSupply = toBN(await poolToken.totalSupply());
-                    const agentPoolCollateral =
-                        totalSupply.toString() === "0"
-                            ? toBN(0)
-                            : toBN(await poolToken.balanceOf(agent.vaultAddress))
-                                  .mul(poolNatBalance)
-                                  .div(totalSupply);
-                    const agentPoolCollateralUSDFormatted = calculateUSDValue(toBN(agentPoolCollateral), priceUSD, 18 + Number(cflrPrice.decimals), 18, 3);
+                    const poolTokenAddress = await pool.poolToken();
+                    const poolToken = ICollateralPoolToken__factory.connect(poolTokenAddress, provider);
+                    const poolNatBalance = await pool.totalCollateral();
+                    const totalSupply = await poolToken.totalSupply();
+                    const agentPoolCollateralVal = totalSupply === 0n ? 0n : ((await poolToken.balanceOf(agent.vaultAddress)) * poolNatBalance) / totalSupply;
+                    const agentPoolCollateralUSDFormatted = calculateUSDValueBigInt(agentPoolCollateralVal, priceUSD, 18 + cflrPriceData.decimals, 18, 3);
                     agentPoolCollateralOnly = sumUsdStrings(agentPoolCollateralOnly, agentPoolCollateralUSDFormatted);
                     agentPoolCollateralOnly = sumUsdStrings(agentPoolCollateralOnly, vaultOnlyCollateralUSD);
                     //Check liq
@@ -660,41 +713,41 @@ export class BotService implements OnModuleInit {
                     const remainingAssets = Number(info.freeCollateralLots) * lotSize;
                     let existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
                     if (!existingPriceAsset) {
-                        const priceAsset = await priceReader.getPrice(this.fassetSymbol.get(fasset), false, settings.maxTrustedPriceAgeSeconds);
+                        const priceAsset = await this.getPrice(priceReader, this.fassetSymbol.get(fasset));
                         existingPriceAsset = {
                             symbol: this.fassetSymbol.get(fasset),
                             price: priceAsset.price,
-                            decimals: Number(priceAsset.decimals),
+                            decimals: priceAsset.decimals,
                         };
                         prices.push(existingPriceAsset);
                     }
-                    const remainingUSDFormatted = calculateUSDValue(
-                        toBN(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals))),
+                    const remainingUSDFormatted = calculateUSDValueBigInt(
+                        BigInt(Math.floor(remainingAssets * 10 ** Number(settings.assetDecimals))),
                         existingPriceAsset.price,
                         existingPriceAsset.decimals,
                         Number(settings.assetDecimals),
                         3
                     );
-                    const mintedUSDFormatted = calculateUSDValue(
-                        toBN(info.mintedUBA),
+                    const mintedUSDFormatted = calculateUSDValueBigInt(
+                        info.mintedUBA,
                         existingPriceAsset.price,
                         existingPriceAsset.decimals,
                         Number(settings.assetDecimals),
                         3
                     );
                     mintedAll = sumUsdStrings(mintedAll, mintedUSDFormatted);
-                    const mintedReservedLots = toBN(info.mintedUBA).add(toBN(info.reservedUBA)).div(lotSizeUBA);
-                    const mintedAssets = formatFixed(toBN(info.mintedUBA), Number(settings.assetDecimals), {
+                    const mintedReservedLots = (info.mintedUBA + info.reservedUBA) / lotSizeUBA;
+                    const mintedAssets = formatFixedBigInt(info.mintedUBA, Number(settings.assetDecimals), {
                         decimals: fasset.includes("XRP") ? 3 : 8,
                         groupDigits: true,
                         groupSeparator: ",",
                     });
                     //supplyFa.supply = sumUsdStrings(supplyFa.supply, mintedAssets);
-                    mintedReservedUBA = mintedReservedUBA.add(toBN(info.mintedUBA)).add(toBN(info.reservedUBA));
-                    mintedUBA = mintedUBA.add(toBN(info.mintedUBA));
+                    mintedReservedUBA = mintedReservedUBA + info.mintedUBA + info.reservedUBA;
+                    mintedUBA = mintedUBA + info.mintedUBA;
                     //supplyFa.minted = sumUsdStrings(supplyFa.minted, mintedUSDFormatted);
-                    const allLots = mintedReservedLots.toNumber() + Number(info.freeCollateralLots);
-                    if (mintingCap.toString() === "0") {
+                    const allLots = Number(mintedReservedLots) + Number(info.freeCollateralLots);
+                    if (mintingCap === 0n) {
                         if ((Number(info.status) == 0 || Number(info.status) == 1) && info.publiclyAvailable == true) {
                             supplyFa.availableToMintLots = supplyFa.availableToMintLots + Number(info.freeCollateralLots);
                             supplyFa.availableToMintUSD = sumUsdStrings(supplyFa.availableToMintUSD, remainingUSDFormatted);
@@ -708,13 +761,13 @@ export class BotService implements OnModuleInit {
                     const limitUSD = sumUsdStrings(mintedUSDFormatted, remainingUSDFormatted);
 
                     //Track total collateral for native token and vault collateral
-                    const existingCollateralNative = supplyCollateral.find((asset) => asset.symbol === infoBot.context.nativeChainInfo.tokenSymbol);
+                    const existingCollateralNative = supplyCollateral.find((asset) => asset.symbol === nativeSymbol);
                     if (existingCollateralNative) {
                         existingCollateralNative.supply = sumUsdStrings(existingCollateralNative.supply, totalPoolCollateral);
                         existingCollateralNative.supplyUSD = sumUsdStrings(existingCollateralNative.supplyUSD, poolOnlyCollateralUSD);
                     } else {
                         supplyCollateral.push({
-                            symbol: infoBot.context.nativeChainInfo.tokenSymbol,
+                            symbol: nativeSymbol,
                             supply: totalPoolCollateral,
                             supplyUSD: poolOnlyCollateralUSD,
                         });
@@ -745,7 +798,7 @@ export class BotService implements OnModuleInit {
                     agent.publiclyAvailable = info.publiclyAvailable;
                     agent.mintingVaultCR = mintingVaultCR;
                     agent.mintingPoolCR = mintingPoolCR;
-                    agent.vaultToken = info.vaultCollateralToken;
+                    agent.vaultToken = info.vaultCollateralToken as string;
                     agent.mintedUSD = mintedUSDFormatted;
                     agent.allLots = allLots;
                     agent.poolOnlyCollateralUSD = poolOnlyCollateralUSD;
@@ -771,42 +824,44 @@ export class BotService implements OnModuleInit {
                     logger.error(`Error in getPools (update):`, error);
                 }
             }
-            const faSupply = await this.botMap.get(fasset).context.fAsset.totalSupply();
-            const mintedLots = toBN(faSupply).div(lotSizeUBA);
-            supplyFa.mintedLots = toBN(mintedLots).toNumber();
-            if (mintingCap.toString() != "0") {
-                const availableToMintUBA = mintingCap.sub(toBN(faSupply));
-                const freeLotsUBA = toBN(supplyFa.availableToMintLots).mul(lotSizeUBA);
-                const availableLotsCap = Math.min(availableToMintUBA.div(lotSizeUBA).toNumber(), supplyFa.availableToMintLots);
+            const faSupply = await fAssetContract.totalSupply();
+            const mintedLots = faSupply / lotSizeUBA;
+            supplyFa.mintedLots = Number(mintedLots);
+            if (mintingCap !== 0n) {
+                const availableToMintUBA = mintingCap - faSupply;
+                const freeLotsUBA = BigInt(supplyFa.availableToMintLots) * lotSizeUBA;
+                const availableLotsCap =
+                    Number(availableToMintUBA / lotSizeUBA) < supplyFa.availableToMintLots
+                        ? Number(availableToMintUBA / lotSizeUBA)
+                        : supplyFa.availableToMintLots;
                 supplyFa.availableToMintLots = Number(availableLotsCap);
                 let existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
                 if (!existingPriceAsset) {
-                    const priceAsset = await priceReader.getPrice(this.fassetSymbol.get(fasset), false, settings.maxTrustedPriceAgeSeconds);
+                    const priceAsset = await this.getPrice(priceReader, this.fassetSymbol.get(fasset));
                     prices.push({
                         symbol: this.fassetSymbol.get(fasset),
                         price: priceAsset.price,
-                        decimals: Number(priceAsset.decimals),
+                        decimals: priceAsset.decimals,
                     });
                     existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
                 }
-                const availableToMintUSDFormatted = calculateUSDValue(
-                    Number(availableLotsCap) == 0 ? toBN(0) : toBN(Math.min(availableToMintUBA.toNumber(), freeLotsUBA.toNumber())),
+                const minUBA = availableToMintUBA < freeLotsUBA ? availableToMintUBA : freeLotsUBA;
+                const availableToMintUSDFormatted = calculateUSDValueBigInt(
+                    Number(availableLotsCap) == 0 ? 0n : minUBA,
                     existingPriceAsset.price,
                     existingPriceAsset.decimals,
                     Number(settings.assetDecimals),
                     3
                 );
                 supplyFa.availableToMintUSD = availableToMintUSDFormatted;
-                supplyFa.allLots = mintedLots.toNumber() + Number(availableLotsCap);
-                const mintingCapUSD = toBN(mintingCap)
-                    .mul(existingPriceAsset.price)
-                    .div(toBNExp(1, Number(existingPriceAsset.decimals)));
-                supplyFa.mintingCapUSD = formatFixed(mintingCapUSD, Number(settings.assetDecimals), {
+                supplyFa.allLots = Number(mintedLots) + Number(availableLotsCap);
+                const mintingCapUSD = (mintingCap * existingPriceAsset.price) / bigintPow10(existingPriceAsset.decimals);
+                supplyFa.mintingCapUSD = formatFixedBigInt(mintingCapUSD, Number(settings.assetDecimals), {
                     decimals: 3,
                     groupDigits: true,
                     groupSeparator: ",",
                 });
-                supplyFa.mintingCap = formatFixed(toBN(mintingCap), Number(settings.assetDecimals), {
+                supplyFa.mintingCap = formatFixedBigInt(mintingCap, Number(settings.assetDecimals), {
                     decimals: fasset.includes("XRP") ? 3 : 6,
                     groupDigits: true,
                     groupSeparator: ",",
@@ -816,16 +871,16 @@ export class BotService implements OnModuleInit {
             }
             let existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
             if (!existingPriceAsset) {
-                const priceAsset = await priceReader.getPrice(this.fassetSymbol.get(fasset), false, settings.maxTrustedPriceAgeSeconds);
+                const priceAsset = await this.getPrice(priceReader, this.fassetSymbol.get(fasset));
                 prices.push({
                     symbol: this.fassetSymbol.get(fasset),
                     price: priceAsset.price,
-                    decimals: Number(priceAsset.decimals),
+                    decimals: priceAsset.decimals,
                 });
                 existingPriceAsset = prices.find((p) => p.symbol === this.fassetSymbol.get(fasset));
             }
-            const faSupplyUSD = toBN(faSupply).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-            supplyFa.minted = formatFixed(faSupplyUSD, Number(settings.assetDecimals), {
+            const faSupplyUSD = (faSupply * existingPriceAsset.price) / bigintPow10(existingPriceAsset.decimals);
+            supplyFa.minted = formatFixedBigInt(faSupplyUSD, Number(settings.assetDecimals), {
                 decimals: 3,
                 groupDigits: true,
                 groupSeparator: ",",
@@ -834,7 +889,7 @@ export class BotService implements OnModuleInit {
                 //calculate price of fees
                 rewardsAvailableUSD = sumUsdStrings(rewardsAvailableUSD, "0");
                 logger.info(`Pools for fasset ${fasset} updated in: ${(Date.now() - start) / 1000}`);
-                supplyFa.supply = formatFixed(toBN(faSupply), Number(settings.assetDecimals), {
+                supplyFa.supply = formatFixedBigInt(faSupply, Number(settings.assetDecimals), {
                     decimals: fasset.includes("XRP") ? 3 : 6,
                     groupDigits: true,
                     groupSeparator: ",",
@@ -851,7 +906,7 @@ export class BotService implements OnModuleInit {
             }
             //calculate price of fees
             logger.info(`Pools for fasset ${fasset} updated in: ${(Date.now() - start) / 1000}`);
-            supplyFa.supply = formatFixed(toBN(faSupply), Number(settings.assetDecimals), {
+            supplyFa.supply = formatFixedBigInt(faSupply, Number(settings.assetDecimals), {
                 decimals: fasset.includes("XRP") ? 3 : 6,
                 groupDigits: true,
                 groupSeparator: ",",
@@ -860,15 +915,15 @@ export class BotService implements OnModuleInit {
                 supplyFa.mintedPercentage = "0.00";
                 supplyFa.availableToMintAsset = "0";
             } else {
-                if (await this.botMap.get(fasset).context.assetManager.mintingPaused()) {
+                if (await assetManager.mintingPaused()) {
                     supplyFa.mintedPercentage = ((supplyFa.availableToMintLots / supplyFa.allLots) * 100).toFixed(2);
                     supplyFa.availableToMintAsset = "0";
                     supplyFa.availableToMintLots = 0;
                     supplyFa.availableToMintUSD = "0";
                 } else {
                     supplyFa.mintedPercentage = ((supplyFa.availableToMintLots / supplyFa.allLots) * 100).toFixed(2);
-                    const availableToMintUBA = toBN(supplyFa.availableToMintLots).mul(toBN(lotSizeUBA));
-                    supplyFa.availableToMintAsset = formatFixed(availableToMintUBA, Number(settings.assetDecimals), {
+                    const availableToMintUBACalc = BigInt(supplyFa.availableToMintLots) * lotSizeUBA;
+                    supplyFa.availableToMintAsset = formatFixedBigInt(availableToMintUBACalc, Number(settings.assetDecimals), {
                         decimals: fasset.includes("XRP") ? 3 : 6,
                         groupDigits: true,
                         groupSeparator: ",",
@@ -878,13 +933,13 @@ export class BotService implements OnModuleInit {
             supplyFasset.push(supplyFa);
             const fa = NETWORK_SYMBOLS.find((fa) => (this.envType == "dev" ? fa.test : fa.real) === fasset);
             const rewards = poolRewardsPaid[fa.real];
-            const rewardsAsset = formatFixed(toBN(rewards?.value ?? "0"), Number(settings.assetDecimals), {
+            const rewardsAsset = formatFixedBigInt(BigInt(rewards?.value ?? "0"), Number(settings.assetDecimals), {
                 decimals: fasset.includes("XRP") ? 3 : 6,
                 groupDigits: true,
                 groupSeparator: ",",
             });
-            const rewardsAssetUSDFormatted = calculateUSDValue(
-                toBN(rewards?.value ?? "0"),
+            const rewardsAssetUSDFormatted = calculateUSDValueBigInt(
+                BigInt(rewards?.value ?? "0"),
                 existingPriceAsset.price,
                 existingPriceAsset.decimals,
                 Number(settings.assetDecimals),
@@ -900,55 +955,57 @@ export class BotService implements OnModuleInit {
                 const getCoreVaultOutflows = await this.externalApiService.getCVOutflows(start);
                 const coreVaultInflows = getCoreVaultInflows["FXRP"][0].value;
                 const coreVaultOutflows = getCoreVaultOutflows["FXRP"][0].value;
-                const inflowsUSD = toBN(coreVaultInflows).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-                const outflowsUSD = toBN(coreVaultOutflows).mul(existingPriceAsset.price).div(toBNExp(1, existingPriceAsset.decimals));
-                this.coreVaultInflows = formatFixed(toBN(coreVaultInflows), 6, {
+                const inflowsBig = BigInt(coreVaultInflows);
+                const outflowsBig = BigInt(coreVaultOutflows);
+                const inflowsUSD = (inflowsBig * existingPriceAsset.price) / bigintPow10(existingPriceAsset.decimals);
+                const outflowsUSD = (outflowsBig * existingPriceAsset.price) / bigintPow10(existingPriceAsset.decimals);
+                this.coreVaultInflows = formatFixedBigInt(inflowsBig, 6, {
                     decimals: 2,
                     groupDigits: true,
                     groupSeparator: ",",
                 });
-                this.coreVaultInflowsUSD = formatFixed(inflowsUSD, Number(settings.assetDecimals), {
+                this.coreVaultInflowsUSD = formatFixedBigInt(inflowsUSD, Number(settings.assetDecimals), {
                     decimals: 2,
                     groupDigits: true,
                     groupSeparator: ",",
                 });
-                this.coreVaultOutflows = formatFixed(toBN(coreVaultOutflows), 6, {
+                this.coreVaultOutflows = formatFixedBigInt(outflowsBig, 6, {
                     decimals: 2,
                     groupDigits: true,
                     groupSeparator: ",",
                 });
-                this.coreVaultOutflowsUSD = formatFixed(outflowsUSD, Number(settings.assetDecimals), {
+                this.coreVaultOutflowsUSD = formatFixedBigInt(outflowsUSD, Number(settings.assetDecimals), {
                     decimals: 2,
                     groupDigits: true,
                     groupSeparator: ",",
                 });
-                const cvTotal = toBN(coreVaultInflows).sub(toBN(coreVaultOutflows));
-                const cvTotalUSDFormatted = calculateUSDValue(
-                    toBN(cvTotal),
+                const cvTotal = inflowsBig - outflowsBig;
+                const cvTotalUSDFormatted = calculateUSDValueBigInt(
+                    cvTotal,
                     existingPriceAsset.price,
                     existingPriceAsset.decimals,
                     Number(settings.assetDecimals),
                     2
                 );
-                this.coreVaultSupply = formatFixed(cvTotal, 6, { decimals: 2, groupDigits: true, groupSeparator: "," });
+                this.coreVaultSupply = formatFixedBigInt(cvTotal, 6, { decimals: 2, groupDigits: true, groupSeparator: "," });
                 this.coreVaultSupplyUSD = cvTotalUSDFormatted;
                 const now = Math.floor(Date.now() / 1000);
                 const proofOfReserveNow = await this.externalApiService.getCVratio("timestamps=" + now);
-                let porRatioNow = proofOfReserveNow["FXRP"][0].value;
+                let porRatioNow = proofOfReserveNow["FXRP"] ? proofOfReserveNow["FXRP"][0].value : 1.003;
                 if (!proofOfReserveNow["FXRP"] || porRatioNow < 1) {
                     porRatioNow = 1.003;
                 }
-                const porRatioBN = toBNDecimal(porRatioNow, 10);
-                const totalReserve = faSupply.mul(porRatioBN).div(toBN("10000000000"));
-                const reserveUSDFormatted = calculateUSDValue(
+                const porRatioBN = toBNDecimalBigInt(porRatioNow, 10);
+                const totalReserve = (faSupply * porRatioBN) / 10000000000n;
+                const reserveUSDFormatted = calculateUSDValueBigInt(
                     totalReserve,
                     existingPriceAsset.price,
                     existingPriceAsset.decimals,
                     Number(settings.assetDecimals),
                     2
                 );
-                const ratio = faSupply.eqn(0) ? toBNExp(1, 10) : totalReserve.mul(toBNExp(1, 10)).div(faSupply).mul(toBN(100));
-                let ratioCalc = Number(ratio.toString()) / 1e10;
+                const ratio = faSupply === 0n ? bigintPow10(10) : ((totalReserve * bigintPow10(10)) / faSupply) * 100n;
+                let ratioCalc = Number(ratio) / 1e10;
                 if (ratioCalc < 100) {
                     ratioCalc = 100;
                 }
@@ -957,7 +1014,7 @@ export class BotService implements OnModuleInit {
                 const proofOfReserve: ProofOfReserve = {
                     total: supplyFa.supply,
                     totalUSD: supplyFa.minted,
-                    reserve: formatFixed(totalReserve, 6, { decimals: 2, groupDigits: true, groupSeparator: "," }),
+                    reserve: formatFixedBigInt(totalReserve, 6, { decimals: 2, groupDigits: true, groupSeparator: "," }),
                     reserveUSD: reserveUSDFormatted,
                     ratio: ratioFormatted,
                 };
@@ -978,8 +1035,8 @@ export class BotService implements OnModuleInit {
                 if (agent.vaultAddress.toLowerCase() === FILTER_AGENT || bestPools.length == 3) {
                     continue;
                 }
-                const claimedUSDFormatted = calculateUSDValue(
-                    toBN(tp.claimed),
+                const claimedUSDFormatted = calculateUSDValueBigInt(
+                    BigInt(tp.claimed),
                     existingPriceAsset.price,
                     existingPriceAsset.decimals,
                     Number(settings.assetDecimals),
@@ -1037,22 +1094,6 @@ export class BotService implements OnModuleInit {
         logger.info(`Finish updating pools`);
     }
 
-    getUserBot(fasset: string): UserBotCommands {
-        return this.botMap.get(fasset);
-    }
-
-    getUserBotMap(): Map<string, UserBotCommands> {
-        return this.botMap;
-    }
-
-    getInfoBot(fasset: string): InfoBotCommands {
-        return this.infoBotMap.get(fasset);
-    }
-
-    getRelay(): IRelayInstance {
-        return this.relay;
-    }
-
     getEcosystemInfo(): EcosystemData {
         return {
             tvl: this.ecosystemTVL,
@@ -1103,32 +1144,38 @@ export class BotService implements OnModuleInit {
         return data;
     }
 
-    getSecrets(): Secrets {
-        return this.secrets;
-    }
-
+    /**
+     * Reads the on-chain redemption queue and caches both lot counts and raw UBA amounts.
+     * The UBA amounts let the frontend display amounts instead of lots.
+     */
     async updateRedemptionQueue(fasset: string): Promise<void> {
-        const bot = this.getInfoBot(fasset);
-        const settings = await bot.context.assetManager.getSettings();
+        const assetManager = this.assetManagerMap.get(fasset);
+        const settings = await assetManager.getSettings();
         const maxTickets = Number(settings.maxRedeemedTickets);
-        const lotSizeUBA = toBN(settings.lotSizeAMG).mul(toBN(settings.assetMintingGranularityUBA));
-        let maxSingleRedemtionTotal = toBN(0);
-        let maxShortTermRedemptionTotal = toBN(0);
-        let redemptionQueue = await bot.context.assetManager.redemptionQueue(0, maxTickets);
+        const lotSizeUBA = settings.lotSizeAMG * settings.assetMintingGranularityUBA;
+        let maxSingleRedemtionTotal = 0n;
+        let maxShortTermRedemptionTotal = 0n;
+        let redemptionQueue = await assetManager.redemptionQueue(0, maxTickets);
         if (redemptionQueue[0].length == 0) {
             await this.cacheManager.set(fasset + "maxLotsSingleRedeem", 0, 0);
             await this.cacheManager.set(fasset + "maxLotsTotalRedeem", 0, 0);
+            await this.cacheManager.set(fasset + "maxAmountSingleRedeem", "0", 0);
+            await this.cacheManager.set(fasset + "maxAmountTotalRedeem", "0", 0);
             return;
         }
-        maxSingleRedemtionTotal = redemptionQueue[0].reduce((acc, num) => acc.add(toBN(num.ticketValueUBA)), toBN(0));
+        maxSingleRedemtionTotal = redemptionQueue[0].reduce((acc, num) => acc + num.ticketValueUBA, 0n);
         maxShortTermRedemptionTotal = maxSingleRedemtionTotal;
-        while (toBN(redemptionQueue[1]).toString() != "0") {
-            redemptionQueue = await bot.context.assetManager.redemptionQueue(toBN(redemptionQueue[1]).toString(), 20);
-            maxShortTermRedemptionTotal = maxShortTermRedemptionTotal.add(redemptionQueue[0].reduce((acc, num) => acc.add(toBN(num.ticketValueUBA)), toBN(0)));
+        while (redemptionQueue[1] !== 0n) {
+            redemptionQueue = await assetManager.redemptionQueue(redemptionQueue[1], 20);
+            maxShortTermRedemptionTotal = maxShortTermRedemptionTotal + redemptionQueue[0].reduce((acc, num) => acc + num.ticketValueUBA, 0n);
         }
-        const maxSingleLotsToRedeem = maxSingleRedemtionTotal.div(toBN(lotSizeUBA));
-        const maxShortTermLotsTotal = maxShortTermRedemptionTotal.div(toBN(lotSizeUBA));
-        await this.cacheManager.set(fasset + "maxLotsSingleRedeem", maxSingleLotsToRedeem, 0);
-        await this.cacheManager.set(fasset + "maxLotsTotalRedeem", maxShortTermLotsTotal, 0);
+        const maxSingleLotsToRedeem = maxSingleRedemtionTotal / lotSizeUBA;
+        const maxShortTermLotsTotal = maxShortTermRedemptionTotal / lotSizeUBA;
+        // Cache lot-based values as Number (BigInt cannot be JSON-serialized by cache)
+        await this.cacheManager.set(fasset + "maxLotsSingleRedeem", Number(maxSingleLotsToRedeem), 0);
+        await this.cacheManager.set(fasset + "maxLotsTotalRedeem", Number(maxShortTermLotsTotal), 0);
+        // Cache raw UBA amounts for amount-based redemption
+        await this.cacheManager.set(fasset + "maxAmountSingleRedeem", maxSingleRedemtionTotal.toString(), 0);
+        await this.cacheManager.set(fasset + "maxAmountTotalRedeem", maxShortTermRedemptionTotal.toString(), 0);
     }
 }

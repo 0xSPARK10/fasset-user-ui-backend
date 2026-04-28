@@ -1,0 +1,72 @@
+[
+    {
+        "name": "WNat",
+        "contractName": "WNat.sol",
+        "address": "0xC67DCE33D7A8efA5FfEB961899C73fe01bCe9273"
+    },
+    {
+        "name": "Relay",
+        "contractName": "Relay.sol",
+        "address": "0xa10B672D1c62e5457b17af63d4302add6A99d7dE"
+    },
+    {
+        "name": "FdcHub",
+        "contractName": "FdcHub.sol",
+        "address": "0x48aC463d7975828989331F4De43341627b9c5f1D"
+    },
+    {
+        "name": "FdcVerification",
+        "contractName": "FdcVerification.sol",
+        "address": "0x906507E0B64bcD494Db73bd0459d1C667e14B933"
+    },
+    {
+        "name": "testUSDT0",
+        "contractName": "IERC20.sol",
+        "address": "0x21709E63fC7F264F329e0826Ea82197694B82775"
+    },
+    {
+        "name": "PriceReader",
+        "contractName": "FtsoV2PriceStoreProxy.sol",
+        "address": "0x94E33f519E256149752711245EAB2E1abb8c34A4"
+    },
+    {
+        "name": "AgentOwnerRegistry",
+        "contractName": "AgentOwnerRegistryProxy.sol",
+        "address": "0xAF21eE9C49030e2dE9e8c2Ab7618082cc3d70b42"
+    },
+    {
+        "name": "CollateralPoolProxyImplementation",
+        "contractName": "CollateralPool.sol",
+        "address": "0x00D5F55Be1E4849B065799E15B5110b342eD37c3"
+    },
+    {
+        "name": "AssetManagerController",
+        "contractName": "AssetManagerControllerProxy.sol",
+        "address": "0x1C772F700308aF4c13897cc7b9c41EFfB82c50C0"
+    },
+    {
+        "name": "AssetManager_FTestXRP",
+        "contractName": "AssetManager.sol",
+        "address": "0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA"
+    },
+    {
+        "name": "FTestXRP",
+        "contractName": "FAssetProxy.sol",
+        "address": "0x0b6A3645c240605887a5532109323A3E12273dc7"
+    },
+    {
+        "name": "CoreVaultManager_FTestXRP",
+        "contractName": "CoreVaultManagerProxy.sol",
+        "address": "0x4CB40b0dBfbF239eC60C9bE1496A6c1aA29e429b"
+    },
+    {
+        "name": "MintingTagManager_FTestXRP",
+        "contractName": "MintingTagManager.sol",
+        "address": "0x094511737909b626391106bBc21B25feb2D67B96"
+    },
+    {
+        "name": "MasterAccountController_FTestXRP",
+        "contractName": "IMasterAccountController.sol",
+        "address": "0x32F662C63c1E24bB59B908249962F00B61C6638f"
+    }
+]

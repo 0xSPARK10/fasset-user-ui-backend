@@ -1,35 +1,35 @@
 #version: '3.8'
 services:
-  # PostgreSQL Service
-  postgres:
-    image: postgres:13
-    container_name: ${COMPOSE_PROJECT_NAME}-postgres
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-        - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+    # PostgreSQL Service
+    postgres:
+        image: postgres:13
+        container_name: ${COMPOSE_PROJECT_NAME}-postgres
+        environment:
+            POSTGRES_DB: ${POSTGRES_DB}
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        restart: unless-stopped
 
-  # Application Service
-  app:
-    image: ghcr.io/0xspark10/fasset-user-ui-backend:main
-    container_name: ${COMPOSE_PROJECT_NAME}-app
-    ports:
-      - "${BACK_DOCKER_PORT}:3001"
-    #Optional network param if you have connection issues
-    #dns:
-    #  - 8.8.8.8
-    #  - 8.8.4.4
-    volumes:
-          - ./.env:/app/.env
-    env_file:
-      - .env
-    depends_on:
-      - postgres
-    command: "/bin/sh -c '(yarn build) && (yarn run start)'"
-    restart: unless-stopped
+    # Application Service
+    app:
+        image: ghcr.io/0xspark10/fasset-user-ui-backend:main
+        container_name: ${COMPOSE_PROJECT_NAME}-app
+        ports:
+            - "${BACK_DOCKER_PORT}:3001"
+        #Optional network param if you have connection issues
+        #dns:
+        #  - 8.8.8.8
+        #  - 8.8.4.4
+        volumes:
+            - ./.env:/app/.env
+        env_file:
+            - .env
+        depends_on:
+            - postgres
+        command: "/bin/sh -c '(yarn build) && (yarn run start)'"
+        restart: unless-stopped
 
 volumes:
-  postgres_data:
+    postgres_data:

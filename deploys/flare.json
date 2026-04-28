@@ -1,0 +1,62 @@
+[
+    {
+        "name": "WNat",
+        "contractName": "WNat.sol",
+        "address": "0x1D80c49BbBCd1C0911346656B529DF9E5c2F783d"
+    },
+    {
+        "name": "Relay",
+        "contractName": "Relay.sol",
+        "address": "0xCcF30790A93F15e24EB909548a2C58a9b0a7FBd4"
+    },
+    {
+        "name": "FdcHub",
+        "contractName": "FdcHub.sol",
+        "address": "0xc25c749DC27Efb1864Cb3DADa8845B7687eB2d44"
+    },
+    {
+        "name": "FdcVerification",
+        "contractName": "FdcVerification.sol",
+        "address": "0x9394c7A36b3Da8de1b4F27cdD0a554dA4Fa7132d"
+    },
+    {
+        "name": "USDT0",
+        "contractName": "IERC20.sol",
+        "address": "0xe7cd86e13AC4309349F30B3435a9d337750fC82D"
+    },
+    {
+        "name": "PriceReader",
+        "contractName": "FtsoV2PriceStoreProxy.sol",
+        "address": "0x3eF12dF4f91D6168b353B0Ae8195Cc8642D8a411"
+    },
+    {
+        "name": "AgentOwnerRegistry",
+        "contractName": "AgentOwnerRegistryProxy.sol",
+        "address": "0xD2593336C6C4Bfd261FEEf0A23F113cD7d018fa2"
+    },
+    {
+        "name": "CollateralPoolProxyImplementation",
+        "contractName": "CollateralPool.sol",
+        "address": "0x747bF230e4CC9dba11393f5e76736Fff714B3721"
+    },
+    {
+        "name": "AssetManagerController",
+        "contractName": "AssetManagerControllerProxy.sol",
+        "address": "0x097B93eEBe9b76f2611e1E7D9665a9d7Ff5280B3"
+    },
+    {
+        "name": "AssetManager_FXRP",
+        "contractName": "AssetManager.sol",
+        "address": "0x2a3Fe068cD92178554cabcf7c95ADf49B4B0B6A8"
+    },
+    {
+        "name": "FXRP",
+        "contractName": "FAssetProxy.sol",
+        "address": "0xAd552A648C74D49E10027AB8a618A3ad4901c5bE"
+    },
+    {
+        "name": "CoreVaultManager_FXRP",
+        "contractName": "CoreVaultManagerProxy.sol",
+        "address": "0x6c8d96dEfE4cbEE05FA969Fc0Ac436d94Fc21784"
+    }
+]

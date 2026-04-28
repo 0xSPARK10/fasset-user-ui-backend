@@ -4,9 +4,8 @@ import { ethers, FetchRequest } from "ethers";
 import { join } from "path";
 import https from "https";
 import { readFileSync } from "fs";
-import { BotService } from "./bot.init.service";
-import { toBN, toBNExp } from "@flarelabs/fasset-bots-core";
-import { formatFixed } from "@flarelabs/fasset-bots-core";
+import { FassetConfigService } from "./fasset.config.service";
+import { formatFixedBigInt, bigintPow10 } from "src/utils/utils";
 import { HttpService } from "@nestjs/axios";
 import { logger } from "src/logger/winston.logger";
 import axios from "axios";
@@ -19,6 +18,7 @@ export class RewardsService {
     private contract: ethers.Contract;
     private projectId: number;
     private dalUrls: string[];
+    private dalApiKey: string;
     private flrPrice: number;
     private flrDecimals: number;
     private rewardsAPI: string;
@@ -27,8 +27,8 @@ export class RewardsService {
 
     constructor(
         private readonly configService: ConfigService,
-        private readonly botService: BotService,
-        private readonly httpService: HttpService
+        private readonly httpService: HttpService,
+        private readonly fassetConfigService: FassetConfigService
     ) {
         const rpcUrl = this.configService.get<string>("FLR_RPC");
         const apiKey = this.configService.get<string>("FLR_RPC_API_KEY");
@@ -48,11 +48,12 @@ export class RewardsService {
         this.contract = new ethers.Contract(contractAddress, contractAbi, this.provider);
         this.projectId = 4;
 
-        const pathForConfig = this.network + "-bot.json";
-        const filePathConfig = join(__dirname, "../..", "src", pathForConfig);
-        const configFile = readFileSync(filePathConfig, "utf-8");
-        const configContent = JSON.parse(configFile);
-        this.dalUrls = configContent.dataAccessLayerUrls;
+        // Get DAL URLs from FassetConfigService instead of reading bot config file again
+        this.dalUrls = this.fassetConfigService.getDataAccessLayerUrls();
+        // Get DAL API key from env var instead of secrets.json
+        this.dalApiKey = (this.configService.get<string>("DAL_API_KEYS") || "")
+            .split(",")
+            .map((k) => k.trim())[0] || "";
     }
 
     onApplicationBootstrap() {
@@ -98,15 +99,14 @@ export class RewardsService {
     async getPrevRewardsUser(address: string): Promise<any> {
         const rewards = await this.getRewardsAmountAPI(address);
         const price = await this.getFlrPrice();
-        const rewardUSD = toBN(rewards.reward.toLocaleString("fullwide", { useGrouping: false }))
-            .mul(toBN(price.price))
-            .div(toBNExp(1, price.decimals));
-        const usdFormatted = formatFixed(toBN(rewardUSD), 18, {
+        const rewardBigInt = BigInt(rewards.reward.toLocaleString("fullwide", { useGrouping: false }));
+        const rewardUSD = (rewardBigInt * BigInt(price.price)) / bigintPow10(price.decimals);
+        const usdFormatted = formatFixedBigInt(rewardUSD, 18, {
             decimals: 6,
             groupDigits: true,
             groupSeparator: ",",
         });
-        const rewardRFLR = formatFixed(toBN(rewards.reward.toLocaleString("fullwide", { useGrouping: false })), 18, {
+        const rewardRFLR = formatFixedBigInt(rewardBigInt, 18, {
             decimals: 6,
             groupDigits: true,
             groupSeparator: ",",
@@ -137,25 +137,25 @@ export class RewardsService {
 
     async getClaimedRewards(address: string): Promise<Rewards> {
         const months = await this.getProjectInfo();
-        let rewardsClaimed = toBN(0);
+        let rewardsClaimed = 0n;
         for (let i = 0; i < months.length; i++) {
-            let rewardsClaimedForMonth = BigInt(0);
+            let rewardsClaimedForMonth = 0n;
             try {
                 const rewards = await this.contract.getOwnerRewardsInfo(this.projectId, Number(months[i]), address);
-                rewardsClaimedForMonth = rewards[1];
+                rewardsClaimedForMonth = BigInt(rewards[1]);
             } catch (error) {
                 logger.error("Error fetching owner rewards info", error);
             }
-            rewardsClaimed = rewardsClaimed.add(toBN(BigInt(rewardsClaimedForMonth).toString()));
+            rewardsClaimed += rewardsClaimedForMonth;
         }
         const price = await this.getFlrPrice();
-        const claimedUsd = toBN(rewardsClaimed).mul(toBN(price.price)).div(toBNExp(1, price.decimals));
-        const claimedRflr = formatFixed(toBN(rewardsClaimed), 18, {
+        const claimedUsd = (rewardsClaimed * BigInt(price.price)) / bigintPow10(price.decimals);
+        const claimedRflr = formatFixedBigInt(rewardsClaimed, 18, {
             decimals: 6,
             groupDigits: true,
             groupSeparator: ",",
         });
-        const usdFormatted = formatFixed(toBN(claimedUsd), 18, {
+        const usdFormatted = formatFixedBigInt(claimedUsd, 18, {
             decimals: 6,
             groupDigits: true,
             groupSeparator: ",",
@@ -173,13 +173,12 @@ export class RewardsService {
 
     async getFeedIdForFlare(): Promise<any> {
         const agent = new https.Agent({ rejectUnauthorized: false });
-        const s = this.botService.getSecrets();
 
         const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration,
+            httpsAgent: agent,
             headers: {
-                "x-apikey": s.data.apiKey.data_access_layer[0],
-                "x-api-key": s.data.apiKey.data_access_layer[0],
+                "x-apikey": this.dalApiKey,
+                "x-api-key": this.dalApiKey,
             },
         });
         try {
@@ -195,13 +194,12 @@ export class RewardsService {
 
     async getFlarePrice(feedid: string): Promise<any> {
         const agent = new https.Agent({ rejectUnauthorized: false });
-        const s = this.botService.getSecrets();
 
         const axiosInstance = axios.create({
-            httpsAgent: agent, // Use the Agent in the Axios instance configuration,
+            httpsAgent: agent,
             headers: {
-                "x-apikey": s.data.apiKey.data_access_layer[0],
-                "x-api-key": s.data.apiKey.data_access_layer[0],
+                "x-apikey": this.dalApiKey,
+                "x-api-key": this.dalApiKey,
             },
         });
         const requestBody = {
@@ -235,15 +233,15 @@ export class RewardsService {
         //const address = "0xDAF667A846eBE962D2F7eCD459B3be157eBf52BB";
         try {
             const r = await this.contract.getClaimableRewards(this.projectId, address);
-            const claimable = toBN(BigInt(r).toString());
+            const claimable = BigInt(r);
             const price = await this.getFlrPrice();
-            const claimableUsd = toBN(claimable).mul(toBN(price.price)).div(toBNExp(1, price.decimals));
-            const usdFormatted = formatFixed(toBN(claimableUsd), 18, {
+            const claimableUsd = (claimable * BigInt(price.price)) / bigintPow10(price.decimals);
+            const usdFormatted = formatFixedBigInt(claimableUsd, 18, {
                 decimals: 6,
                 groupDigits: true,
                 groupSeparator: ",",
             });
-            const claimableRflr = formatFixed(toBN(claimable), 18, {
+            const claimableRflr = formatFixedBigInt(claimable, 18, {
                 decimals: 6,
                 groupDigits: true,
                 groupSeparator: ",",

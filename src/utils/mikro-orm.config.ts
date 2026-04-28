@@ -9,6 +9,7 @@ import { Minting } from "src/entities/Minting";
 import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
 import { OFTReceived } from "src/entities/OFTReceived";
 import { GuidRedemption } from "src/entities/OFTRedemptionGUID";
+import { OFTRedemption } from "src/entities/OFTRedemption";
 import { OFTSent } from "src/entities/OFTSent";
 import { Pool } from "src/entities/Pool";
 import { Redemption } from "src/entities/Redemption";
@@ -21,6 +22,15 @@ import { FullRedemption } from "src/entities/RedemptionWhole";
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { Wallet } from "src/entities/Wallet";
 import { logger } from "src/logger/winston.logger";
+import { OFTRedemptionFailed } from "src/entities/OFTRedemptionFailed";
+import { DirectMinting } from "src/entities/DirectMinting";
+import { DirectMintingExecutedEvent } from "src/entities/DirectMintingExecutedEvent";
+import { DirectMintingExecutedToSmartAccountEvent } from "src/entities/DirectMintingExecutedToSmartAccountEvent";
+import { DirectMintingPaymentTooSmallForFeeEvent } from "src/entities/DirectMintingPaymentTooSmallForFeeEvent";
+import { DirectMintingDelayedEvent } from "src/entities/DirectMintingDelayedEvent";
+import { LargeDirectMintingDelayedEvent } from "src/entities/LargeDirectMintingDelayedEvent";
+import { RedemptionWithTagRequestedEvent } from "src/entities/RedemptionWithTagRequestedEvent";
+import { RedemptionAmountIncompleteEvent } from "src/entities/RedemptionAmountIncompleteEvent";
 
 let config: Options;
 
@@ -47,6 +57,16 @@ if (process.env.DB_TYPE === "sqlite") {
             OFTReceived,
             OFTSent,
             GuidRedemption,
+            OFTRedemption,
+            OFTRedemptionFailed,
+            DirectMinting,
+            DirectMintingExecutedEvent,
+            DirectMintingExecutedToSmartAccountEvent,
+            DirectMintingPaymentTooSmallForFeeEvent,
+            DirectMintingDelayedEvent,
+            LargeDirectMintingDelayedEvent,
+            RedemptionWithTagRequestedEvent,
+            RedemptionAmountIncompleteEvent,
         ],
         driver: SqliteDriver,
         debug: false,
@@ -75,6 +95,16 @@ if (process.env.DB_TYPE === "sqlite") {
             OFTReceived,
             OFTSent,
             GuidRedemption,
+            OFTRedemption,
+            OFTRedemptionFailed,
+            DirectMinting,
+            DirectMintingExecutedEvent,
+            DirectMintingExecutedToSmartAccountEvent,
+            DirectMintingPaymentTooSmallForFeeEvent,
+            DirectMintingDelayedEvent,
+            LargeDirectMintingDelayedEvent,
+            RedemptionWithTagRequestedEvent,
+            RedemptionAmountIncompleteEvent,
         ],
         driver: PostgreSqlDriver,
         debug: false,

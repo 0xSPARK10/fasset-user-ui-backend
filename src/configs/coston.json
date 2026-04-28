@@ -1,0 +1,12 @@
+{
+    "nativeSymbol": "CFLR",
+    "fassets": {
+        "FTestXRP": {
+            "chainId": "testXRP",
+            "tokenName": "Test XRP",
+            "tokenSymbol": "testXRP",
+            "tokenDecimals": 6,
+            "chain": "XRP"
+        }
+    }
+}

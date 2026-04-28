@@ -1,51 +1,51 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from "@nestjs/common";
-import { AgentPoolItem, AgentPoolLatest, CostonExpTokenBalance, IndexerTokenBalances } from "../interfaces/requestResponse";
-import { AssetManagerSettings, CollateralClass } from "@flarelabs/fasset-bots-core";
-import { BN_ZERO, formatFixed, toBN, toBNExp, artifacts } from "@flarelabs/fasset-bots-core/utils";
-import { BotService } from "./bot.init.service";
+import { AgentPoolItem, AgentPoolLatest, IndexerTokenBalances } from "../interfaces/requestResponse";
 import { EntityManager } from "@mikro-orm/core";
 import { Pool } from "../entities/Pool";
 import { Liveness } from "../entities/AgentLiveness";
-import { CollateralPrice } from "@flarelabs/fasset-bots-core";
-import { TokenPriceReader } from "@flarelabs/fasset-bots-core";
-import { calculateUSDValue, formatBNToDisplayDecimals } from "src/utils/utils";
+import { formatBigIntToDisplayDecimals, formatFixedBigInt, calculateUSDValueBigInt, bigintPow10 } from "src/utils/utils";
 import { logger } from "src/logger/winston.logger";
 import { Collateral } from "src/entities/Collaterals";
 import { ExternalApiService } from "./external.api.service";
-import { lastValueFrom } from "rxjs";
-import { HttpService } from "@nestjs/axios";
 import { ConfigService } from "@nestjs/config";
 import { FILTER_AGENT } from "src/utils/constants";
+import { ContractService } from "./contract.service";
+import { FassetConfigService } from "./fasset.config.service";
+import type { IAssetManager } from "../typechain-ethers-v6";
+import type { ICollateralPool } from "../typechain-ethers-v6";
+import type { ICollateralPoolToken } from "../typechain-ethers-v6";
+import type { IPriceReader } from "../typechain-ethers-v6";
+import type { IFAsset } from "../typechain-ethers-v6";
 
 const NUM_RETRIES = 3;
-const IERC20 = artifacts.require("IERC20Metadata");
-const CollateralPool = artifacts.require("CollateralPool");
-const CollateraPoolToken = artifacts.require("CollateralPoolToken");
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+/** Get IAssetManager contract for a given fasset via deploys naming convention */
+function getAssetManagerName(fasset: string): string {
+    return `AssetManager_${fasset}`;
+}
 
 @Injectable()
 export class PoolService {
-    private costonExplorerUrl: string;
     constructor(
-        private readonly botService: BotService,
         private readonly externalApiService: ExternalApiService,
         private readonly em: EntityManager,
-        private readonly httpService: HttpService,
-        private readonly configService: ConfigService
-    ) {
-        this.costonExplorerUrl = this.configService.get<string>("COSTON_EXPLORER_URL");
-    }
+        private readonly configService: ConfigService,
+        private readonly contractService: ContractService,
+        private readonly fassetConfigService: FassetConfigService
+    ) {}
+
+    // ─── indexer helpers ────────────────────────────────────────────────
 
     async getTokenBalanceFromIndexer(userAddress: string): Promise<IndexerTokenBalances[]> {
         const data = await this.externalApiService.getUserCollateralPoolTokens(userAddress);
         return data;
     }
 
-    /*async getTokenBalanceFromExplorer(userAddress: string): Promise<CostonExpTokenBalance[]> {
-        const data = await lastValueFrom(this.httpService.get(this.costonExplorerUrl + "?module=account&action=tokenlist&address=" + userAddress));
-        return data.data.result;
-    }*/
+    // ─── agent liveness ─────────────────────────────────────────────────
 
     async getAgentLiveness(address: string, now: number): Promise<any> {
         const agentLiveness = await this.em.findOne(Liveness, {
@@ -58,89 +58,145 @@ export class PoolService {
             if (now - agentLiveness.lastTimestamp > 2 * 60 * 60 * 1000) {
                 status = false;
             }
-            /*if (agentLiveness.lastPinged == 0) {
-            status = true;
-          }*/
-            /* if (agentLiveness.lastPinged != 0 && agentLiveness.lastTimestamp == 0) {
-            status = false;
-          }*/
         }
         return status;
     }
 
-    async getPoolCollateralPrice(fasset: string, settings: AssetManagerSettings): Promise<CollateralPrice> {
-        const bot = this.botService.getInfoBot(fasset);
-        const [priceReader, poolCollateral] = await Promise.all([
-            TokenPriceReader.create(settings),
-            bot.context.assetManager.getCollateralType(CollateralClass.POOL, await bot.context.assetManager.getWNat()),
-        ]);
-        return await CollateralPrice.forCollateral(priceReader, settings, poolCollateral);
+    // ─── contract accessors (cached per-call via ContractService) ───────
+
+    private getAssetManager(fasset: string): IAssetManager {
+        return this.contractService.get<IAssetManager>(getAssetManagerName(fasset));
     }
 
-    //TODO: add verification return
+    private getPool(poolAddress: string): ICollateralPool {
+        return this.contractService.getCollateralPoolContract(poolAddress);
+    }
+
+    private getPoolToken(tokenAddress: string): ICollateralPoolToken {
+        return this.contractService.getCollateralPoolTokenContract(tokenAddress);
+    }
+
+    private getPriceReader(): IPriceReader {
+        return this.contractService.get<IPriceReader>("PriceReader");
+    }
+
+    private getFAsset(fasset: string): IFAsset {
+        return this.contractService.get<IFAsset>(fasset);
+    }
+
+    /**
+     * Get the native token price from the PriceReader.
+     * Returns { price, decimals } as bigints.
+     */
+    private async getNativePrice(): Promise<{ price: bigint; decimals: bigint }> {
+        const nativeSymbol = this.fassetConfigService.getNativeSymbol();
+        const priceReader = this.getPriceReader();
+        const result = await priceReader.getPrice(nativeSymbol);
+        return { price: result._price, decimals: result._priceDecimals };
+    }
+
+    /**
+     * Get the asset price from the PriceReader by fasset name.
+     * Returns { price, decimals } as bigints.
+     */
+    private async getAssetPrice(fasset: string): Promise<{ price: bigint; decimals: bigint }> {
+        const fassetConfig = this.fassetConfigService.getFAssetByName(fasset);
+        const priceReader = this.getPriceReader();
+        const result = await priceReader.getPrice(fassetConfig.tokenSymbol);
+        return { price: result._price, decimals: result._priceDecimals };
+    }
+
+    // ─── lifetime claimed pool helper ───────────────────────────────────
+
+    private async getLifetimeClaimedPool(
+        address: string,
+        poolAddress: string,
+        fasset: string,
+        assetDecimals: number,
+        assetPrice: { price: bigint; decimals: bigint }
+    ): Promise<{ formatted: string; usdFormatted: string }> {
+        const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, poolAddress);
+        let lifetimeClaimedPool = "0";
+        if (Object.keys(claimedPools).length != 0) {
+            const keys = Object.keys(claimedPools);
+            const firstKey = keys[0];
+            lifetimeClaimedPool = claimedPools[firstKey].value;
+        }
+        const formatted = formatBigIntToDisplayDecimals(BigInt(lifetimeClaimedPool), fasset.includes("XRP") ? 3 : 8, assetDecimals);
+        const usdFormatted = calculateUSDValueBigInt(BigInt(lifetimeClaimedPool), assetPrice.price, Number(assetPrice.decimals), assetDecimals, 3);
+        return { formatted, usdFormatted };
+    }
+
+    // ─── getPools ───────────────────────────────────────────────────────
+
     async getPools(fassets: string[], address: string): Promise<AgentPoolItem[]> {
         if (address === "undefined") {
-            return;
+            return [];
+        }
+        // Drop entries that came from a missing/blank ?fasset= query. When the FE
+        // sends no query, NestJS passes `undefined`, which the controller wraps
+        // into `[undefined]`; without this filter we'd look up a non-existent
+        // "AssetManager_undefined" contract and burn 3 retries.
+        fassets = (fassets ?? []).filter((f) => f && f !== "undefined");
+        if (fassets.length === 0) {
+            return [];
         }
         if (this.configService.get<string>("NETWORK") == "songbird") {
-            if (this.botService.getInfoBot("FDOGE")) {
-                fassets.push("FDOGE");
+            if (fassets.indexOf("FDOGE") === -1) {
+                try {
+                    this.getAssetManager("FDOGE");
+                    fassets.push("FDOGE");
+                } catch {
+                    // FDOGE asset manager not available
+                }
             }
         }
-        //const a = await web3.utils.toChecksumAddress(address);
 
-        // Indexer info map
         const cptokenBalances = await this.getTokenBalanceFromIndexer(address);
-        //const contractInfoMap = new Map<string, IndexerTokenBalances>(cptokenBalances.map((info) => [info.token, info]));
 
-        //const allTokens = await this.getTokenBalanceFromExplorer(address);
-        //const filteredTokens = allTokens.filter((token) => token.name.startsWith("FAsset Collateral Pool Token"));
-        //const contractInfoMap = new Map<string, CostonExpTokenBalance>(filteredTokens.map((info) => [info.contractAddress.toLowerCase(), info]));
         for (let i = 0; i < NUM_RETRIES; i++) {
             try {
-                const pools = [];
+                const pools: AgentPoolItem[] = [];
                 const now = Date.now();
                 for (const fasset of fassets) {
                     const agents = await this.em.find(Pool, { fasset });
 
-                    // prefetch
+                    // prefetch liveness
                     const livenessPromises = agents.map((agent) => this.getAgentLiveness(agent.vaultAddress, now));
                     const livenessData = await Promise.all(livenessPromises);
 
-                    // calc userPoolNatBalance in USD
-                    const bot = this.botService.getInfoBot(fasset);
-                    const settings = await bot.context.assetManager.getSettings();
-                    const price = await this.getPoolCollateralPrice(fasset, settings);
-                    const priceReader = await TokenPriceReader.create(settings);
-                    const priceAsset = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
+                    // get asset manager settings & prices
+                    const assetManager = this.getAssetManager(fasset);
+                    const settings = await assetManager.getSettings();
+                    const assetDecimals = Number(settings.assetDecimals);
+                    const nativeSymbol = this.fassetConfigService.getNativeSymbol();
+                    const nativePrice = await this.getNativePrice();
+                    const assetPrice = await this.getAssetPrice(fasset);
 
-                    for (let i = 0; i < agents.length; i++) {
-                        const agent = agents[i];
+                    for (let j = 0; j < agents.length; j++) {
+                        const agent = agents[j];
                         if (agent.vaultAddress.toLowerCase() === FILTER_AGENT) {
                             continue;
                         }
                         try {
-                            const status = livenessData[i];
+                            const status = livenessData[j];
                             const info = cptokenBalances[agent.tokenAddress];
-                            //const info = contractInfoMap.get(agent.tokenAddress.toLowerCase());
                             if (!info && !agent.publiclyAvailable) {
                                 continue;
                             }
-                            const vaultCollaterals = await this.em.find(Collateral, {
-                                fasset: fasset,
-                                token: agent.vaultToken,
-                            });
-                            const poolCollaterals = await this.em.find(Collateral, {
-                                fasset: fasset,
-                                tokenFtsoSymbol: bot.context.nativeChainInfo.tokenSymbol,
-                            });
+
+                            const [vaultCollaterals, poolCollaterals] = await Promise.all([
+                                this.em.find(Collateral, { fasset, token: agent.vaultToken }),
+                                this.em.find(Collateral, { fasset, tokenFtsoSymbol: nativeSymbol }),
+                            ]);
                             const vaultCollateral = vaultCollaterals[0];
                             const poolCollateral = poolCollaterals[0];
+
                             if (!info) {
                                 if (agent.status >= 2) {
                                     continue;
                                 }
-                                const agentPool = {
+                                const agentPool: AgentPoolItem = {
                                     vault: agent.vaultAddress,
                                     pool: agent.poolAddress,
                                     totalPoolCollateral: agent.totalPoolCollateral,
@@ -198,42 +254,22 @@ export class PoolService {
                                 continue;
                             }
 
-                            const pool = await CollateralPool.at(agent.poolAddress);
-                            const poolToken = await CollateraPoolToken.at(agent.tokenAddress);
-                            const balance = toBN(await poolToken.balanceOf(address));
-                            const balanceFormated = formatBNToDisplayDecimals(balance, 3, 18);
-                            const fees = toBN(await pool.fAssetFeesOf(address));
-                            if ((balance.eqn(0) || balanceFormated == "0") && fees.eqn(0)) {
-                                const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress);
-                                let lifetimeClaimedPool = "0";
-                                if (Object.keys(claimedPools).length != 0) {
-                                    const keys = Object.keys(claimedPools);
-                                    const firstKey = keys[0];
-                                    lifetimeClaimedPool = claimedPools[firstKey].value;
-                                }
-                                /*const lifetimeClaimedPool = (await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress))[0]
-                                        .claimedUBA;*/
-                                const lifetimeClaimedPoolFormatted = formatBNToDisplayDecimals(
-                                    toBN(lifetimeClaimedPool),
-                                    fasset.includes("XRP") ? 3 : 8,
-                                    Number(settings.assetDecimals)
-                                );
-                                const lifetimeClaimedPoolUSDFormatted = calculateUSDValue(
-                                    toBN(lifetimeClaimedPool),
-                                    priceAsset.price,
-                                    Number(priceAsset.decimals),
-                                    Number(settings.assetDecimals),
-                                    3
-                                );
-                                const agentPool = {
+                            // User has tokens for this pool
+                            const pool = this.getPool(agent.poolAddress);
+                            const poolToken = this.getPoolToken(agent.tokenAddress);
+                            const balance = await poolToken.balanceOf(address);
+                            const balanceFormatted = formatBigIntToDisplayDecimals(balance, 3, 18);
+                            const fees = await pool.fAssetFeesOf(address);
+
+                            if ((balance === 0n || balanceFormatted == "0") && fees === 0n) {
+                                const claimed = await this.getLifetimeClaimedPool(address, agent.poolAddress, fasset, assetDecimals, assetPrice);
+                                const agentPool: AgentPoolItem = {
                                     vault: agent.vaultAddress,
                                     pool: agent.poolAddress,
                                     totalPoolCollateral: agent.totalPoolCollateral,
                                     poolCR: Number(agent.poolCR).toFixed(2),
                                     vaultCR: Number(agent.vaultCR).toFixed(2),
-                                    //userPoolBalance: formatFixed(balance, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                    userPoolBalance: formatBNToDisplayDecimals(balance, 3, 18),
-                                    //userPoolFees: formatFixed(fees, 6, { decimals: 3, groupDigits: true, groupSeparator: "," }),
+                                    userPoolBalance: formatBigIntToDisplayDecimals(balance, 3, 18),
                                     userPoolFees: "0",
                                     feeShare: (agent.feeShare * 100).toFixed(0),
                                     userPoolNatBalance: "0",
@@ -252,10 +288,8 @@ export class PoolService {
                                     poolCollateralUSD: agent.poolNatUsd,
                                     vaultCollateral: agent.vaultCollateral,
                                     collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
-                                    //transferableTokens: formatFixed(transferableTokens, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
                                     transferableTokens: "0",
                                     tokenAddress: agent.tokenAddress,
-                                    //fassetDebt: formatFixed(fassetDebt, 6, { decimals: 6, groupDigits: true, groupSeparator: "," })
                                     fassetDebt: "0",
                                     nonTimeLocked: "0",
                                     mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
@@ -278,68 +312,57 @@ export class PoolService {
                                     userPoolFeesUSD: "0",
                                     totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
                                     limitUSD: agent.limitUSD,
-                                    lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
-                                    lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
+                                    infoUrl: agent.infoUrl,
+                                    lifetimeClaimedPoolFormatted: claimed.formatted,
+                                    lifetimeClaimedPoolUSDFormatted: claimed.usdFormatted,
                                     userPoolTokensFull: balance.toString(),
                                 };
                                 pools.push(agentPool);
                                 continue;
                             }
-                            const poolNatBalance = toBN(await pool.totalCollateral()); // collateral in pool (for example # of SGB in pool)
-                            const totalSupply = toBN(await poolToken.totalSupply()); // all issued collateral pool tokens
-                            //If formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
-                            const userPoolNatBalance = balanceFormated.toString() == "0" ? "0" : toBN(balance).mul(poolNatBalance).div(totalSupply);
-                            const feesUSDFormatted = calculateUSDValue(fees, priceAsset.price, Number(priceAsset.decimals), Number(settings.assetDecimals), 3);
-                            const transferableTokens = await poolToken.transferableBalanceOf(address);
-                            const nonTimeLocked = await poolToken.nonTimelockedBalanceOf(address);
-                            const totalSupplyNum = Number(totalSupply.div(toBNExp(1, 18)));
-                            const balanceNum = Number(balance.div(toBNExp(1, 18)));
+
+                            // User has meaningful balance
+                            const [poolNatBalance, totalSupply, transferableTokens, nonTimeLocked] = await Promise.all([
+                                pool.totalCollateral(),
+                                poolToken.totalSupply(),
+                                poolToken.transferableBalanceOf(address),
+                                poolToken.nonTimelockedBalanceOf(address),
+                            ]);
+
+                            // If formatted balance is "0" (very low decimals), treat pool balance (also in USD) as 0
+                            const userPoolNatBalance = balanceFormatted === "0" ? 0n : (balance * poolNatBalance) / totalSupply;
+
+                            const feesUSDFormatted = calculateUSDValueBigInt(fees, assetPrice.price, Number(assetPrice.decimals), assetDecimals, 3);
+
+                            const totalSupplyNum = Number(totalSupply / bigintPow10(18));
+                            const balanceNum = Number(balance / bigintPow10(18));
                             let percentage = (balanceNum / totalSupplyNum) * 100;
-                            //const fassetDebt = await pool.fAssetFeeDebtOf(address); Uncommment if enabled in FE
-                            //If formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
-                            const userPoolNatBalanceUSD =
-                                balanceFormated.toString() == "0" ? "0" : toBN(userPoolNatBalance).mul(price.tokenPrice.price).div(toBNExp(1, 18)); //still needs to be trimmed for price.tokenPrice.decimals in formatFixed
+
+                            // userPoolNatBalance is in wei (18 decimals), nativePrice.price is scaled by 10^nativePrice.decimals
+                            // Result: userPoolNatBalanceUSD has (18 + nativePrice.decimals) total decimal places
+                            const userPoolNatBalanceUSD = balanceFormatted === "0" ? 0n : userPoolNatBalance * nativePrice.price;
+
                             if (percentage < 0.01 && percentage != 0) {
                                 percentage = 0.01;
                             }
-                            const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress);
-                            let lifetimeClaimedPool = "0";
-                            if (Object.keys(claimedPools).length != 0) {
-                                const keys = Object.keys(claimedPools);
-                                const firstKey = keys[0];
-                                lifetimeClaimedPool = claimedPools[firstKey].value;
-                            }
-                            /*const lifetimeClaimedPool = (await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress))[0]
-                                    .claimedUBA;*/
-                            const lifetimeClaimedPoolFormatted = formatBNToDisplayDecimals(
-                                toBN(lifetimeClaimedPool),
-                                fasset.includes("XRP") ? 3 : 8,
-                                Number(settings.assetDecimals)
-                            );
-                            const lifetimeClaimedPoolUSDFormatted = calculateUSDValue(
-                                toBN(lifetimeClaimedPool),
-                                priceAsset.price,
-                                Number(priceAsset.decimals),
-                                Number(settings.assetDecimals),
-                                3
-                            );
-                            const agentPool = {
+
+                            const claimed = await this.getLifetimeClaimedPool(address, agent.poolAddress, fasset, assetDecimals, assetPrice);
+
+                            const agentPool: AgentPoolItem = {
                                 vault: agent.vaultAddress,
                                 pool: agent.poolAddress,
                                 totalPoolCollateral: agent.totalPoolCollateral,
                                 poolCR: Number(agent.poolCR).toFixed(2),
                                 vaultCR: Number(agent.vaultCR).toFixed(2),
-                                //userPoolBalance: formatFixed(balance, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                userPoolBalance: formatBNToDisplayDecimals(balance, 3, 18),
-                                //userPoolFees: formatFixed(fees, 6, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                userPoolFees: formatBNToDisplayDecimals(toBN(fees), fasset.includes("XRP") ? 3 : 8, Number(settings.assetDecimals)),
+                                userPoolBalance: formatBigIntToDisplayDecimals(balance, 3, 18),
+                                userPoolFees: formatBigIntToDisplayDecimals(fees, fasset.includes("XRP") ? 3 : 8, assetDecimals),
                                 feeShare: (agent.feeShare * 100).toFixed(0),
-                                userPoolNatBalance: formatFixed(toBN(userPoolNatBalance), 18, {
+                                userPoolNatBalance: formatFixedBigInt(userPoolNatBalance, 18, {
                                     decimals: 3,
                                     groupDigits: true,
                                     groupSeparator: ",",
                                 }),
-                                userPoolNatBalanceInUSD: formatFixed(toBN(userPoolNatBalanceUSD), Number(price.tokenPrice.decimals), {
+                                userPoolNatBalanceInUSD: formatFixedBigInt(userPoolNatBalanceUSD, 18 + Number(nativePrice.decimals), {
                                     decimals: 6,
                                     groupDigits: true,
                                     groupSeparator: ",",
@@ -358,12 +381,10 @@ export class PoolService {
                                 poolCollateralUSD: agent.poolNatUsd,
                                 vaultCollateral: agent.vaultCollateral,
                                 collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
-                                //transferableTokens: formatFixed(transferableTokens, 18, { decimals: 3, groupDigits: true, groupSeparator: "," }),
-                                transferableTokens: formatBNToDisplayDecimals(transferableTokens, 3, 18),
+                                transferableTokens: formatBigIntToDisplayDecimals(transferableTokens, 3, 18),
                                 tokenAddress: agent.tokenAddress,
-                                //fassetDebt: formatBNToDisplayDecimals(fassetDebt, Number(settings.assetDecimals), Number(settings.assetDecimals)), can be 0 as debt modal is disabled in FE
                                 fassetDebt: "0",
-                                nonTimeLocked: formatBNToDisplayDecimals(nonTimeLocked, 3, 18),
+                                nonTimeLocked: formatBigIntToDisplayDecimals(nonTimeLocked, 3, 18),
                                 mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
                                 mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
                                 vaultCCBCR: Number(1).toFixed(2),
@@ -385,8 +406,8 @@ export class PoolService {
                                 totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
                                 limitUSD: agent.limitUSD,
                                 infoUrl: agent.infoUrl,
-                                lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
-                                lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
+                                lifetimeClaimedPoolFormatted: claimed.formatted,
+                                lifetimeClaimedPoolUSDFormatted: claimed.usdFormatted,
                                 userPoolTokensFull: nonTimeLocked.toString(),
                             };
                             pools.push(agentPool);
@@ -396,12 +417,12 @@ export class PoolService {
                         }
                     }
                 }
+
                 const parseUserPoolBalance = (balance: string): number => {
                     return parseFloat(balance.replace(/,/g, ""));
                 };
                 pools.sort((a, b) => parseUserPoolBalance(b.userPoolBalance) - parseUserPoolBalance(a.userPoolBalance));
 
-                const end = Date.now();
                 return pools;
             } catch (error) {
                 logger.warn(`Warning in getPools, attempt ${i + 1} of ${NUM_RETRIES}: `, error);
@@ -418,36 +439,37 @@ export class PoolService {
         }
     }
 
+    // ─── getPoolsSpecific ───────────────────────────────────────────────
+
     async getPoolsSpecific(fasset: string, address: string, pool: string): Promise<AgentPoolItem> {
         try {
             const agents = await this.em.find(Pool, { poolAddress: pool });
-            const pools = [];
+            const resultPools: AgentPoolItem[] = [];
             const now = Date.now();
-            const bot = this.botService.getInfoBot(fasset);
-            const nativeSymbol = bot.context.nativeChainInfo.tokenSymbol;
+            const nativeSymbol = this.fassetConfigService.getNativeSymbol();
+
             for (const agent of agents) {
                 if (agent.vaultAddress.toLowerCase() === FILTER_AGENT) {
                     continue;
                 }
                 try {
-                    const pool = await CollateralPool.at(agent.poolAddress);
-                    const poolToken = await CollateraPoolToken.at(agent.tokenAddress);
-                    const balance = toBN(await poolToken.balanceOf(address)); // number of collateral pool tokens
-                    const balanceFormated = formatBNToDisplayDecimals(balance, 3, 18);
+                    const poolContract = this.getPool(agent.poolAddress);
+                    const poolToken = this.getPoolToken(agent.tokenAddress);
+                    const balance = await poolToken.balanceOf(address);
+                    const balanceFormatted = formatBigIntToDisplayDecimals(balance, 3, 18);
                     const status = await this.getAgentLiveness(agent.vaultAddress, now);
-                    const vaultCollaterals = await this.em.find(Collateral, {
-                        fasset: fasset,
-                        token: agent.vaultToken,
-                    });
-                    const poolCollaterals = await this.em.find(Collateral, {
-                        fasset: fasset,
-                        tokenFtsoSymbol: nativeSymbol,
-                    });
+
+                    const [vaultCollaterals, poolCollaterals] = await Promise.all([
+                        this.em.find(Collateral, { fasset, token: agent.vaultToken }),
+                        this.em.find(Collateral, { fasset, tokenFtsoSymbol: nativeSymbol }),
+                    ]);
                     const vaultCollateral = vaultCollaterals[0];
                     const poolCollateral = poolCollaterals[0];
-                    const fees = toBN(await pool.fAssetFeesOf(address));
-                    if (balance.eq(BN_ZERO) && fees.eqn(0)) {
-                        const agentPool = {
+
+                    const fees = await poolContract.fAssetFeesOf(address);
+
+                    if (balance === 0n && fees === 0n) {
+                        const agentPool: AgentPoolItem = {
                             vault: agent.vaultAddress,
                             pool: agent.poolAddress,
                             totalPoolCollateral: agent.totalPoolCollateral,
@@ -501,67 +523,55 @@ export class PoolService {
                             lifetimeClaimedPoolUSDFormatted: "0",
                             userPoolTokensFull: balance.toString(),
                         };
-                        pools.push(agentPool);
+                        resultPools.push(agentPool);
                         continue;
                     }
-                    const poolNatBalance = toBN(await pool.totalCollateral()); // collateral in pool (for example # of SGB in pool)
-                    const totalSupply = toBN(await poolToken.totalSupply()); // all issued collateral pool tokens
-                    //IF formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
-                    const userPoolNatBalance = balanceFormated.toString() == "0" ? "0" : toBN(balance).mul(poolNatBalance).div(totalSupply);
-                    const bot = this.botService.getInfoBot(fasset);
-                    const settings = await bot.context.assetManager.getSettings();
-                    const priceReader = await TokenPriceReader.create(settings);
-                    const priceAsset = await priceReader.getPrice(this.botService.getAssetSymbol(fasset), false, settings.maxTrustedPriceAgeSeconds);
-                    const feesUSDFormatted = calculateUSDValue(fees, priceAsset.price, Number(priceAsset.decimals), Number(settings.assetDecimals), 3);
-                    const transferableTokens = await poolToken.transferableBalanceOf(address);
-                    const nonTimeLocked = await poolToken.nonTimelockedBalanceOf(address);
-                    //const fassetDebt = await pool.fAssetFeeDebtOf(address);
-                    const totalSupplyNum = Number(totalSupply.div(toBNExp(1, 18)));
-                    const balanceNum = Number(balance.div(toBNExp(1, 18)));
+
+                    const [poolNatBalance, totalSupply, transferableTokens, nonTimeLocked] = await Promise.all([
+                        poolContract.totalCollateral(),
+                        poolToken.totalSupply(),
+                        poolToken.transferableBalanceOf(address),
+                        poolToken.nonTimelockedBalanceOf(address),
+                    ]);
+
+                    // If formatted balance is "0" (very low decimals), treat pool balance as 0
+                    const userPoolNatBalance = balanceFormatted === "0" ? 0n : (balance * poolNatBalance) / totalSupply;
+
+                    const assetManager = this.getAssetManager(fasset);
+                    const settings = await assetManager.getSettings();
+                    const assetDecimals = Number(settings.assetDecimals);
+                    const assetPrice = await this.getAssetPrice(fasset);
+                    const feesUSDFormatted = calculateUSDValueBigInt(fees, assetPrice.price, Number(assetPrice.decimals), assetDecimals, 3);
+
+                    const totalSupplyNum = Number(totalSupply / bigintPow10(18));
+                    const balanceNum = Number(balance / bigintPow10(18));
                     let percentage = (balanceNum / totalSupplyNum) * 100;
+
                     // calc userPoolNatBalance in USD
-                    const price = await this.getPoolCollateralPrice(fasset, settings);
-                    //IF formated balance of cpt is 0 (very low decimals) we treat pool balance (also in usd) as 0
-                    const userPoolNatBalanceUSD =
-                        balanceFormated.toString() == "0" ? "0" : toBN(userPoolNatBalance).mul(price.tokenPrice.price).div(toBNExp(1, 18)); //still needs to be trimmed for price.tokenPrice.decimals in formatFixed
+                    const nativePrice = await this.getNativePrice();
+                    const userPoolNatBalanceUSD = balanceFormatted === "0" ? 0n : userPoolNatBalance * nativePrice.price;
 
                     if (percentage < 0.01 && percentage != 0) {
                         percentage = 0.01;
                     }
-                    const claimedPools = await this.externalApiService.getUserTotalClaimedPoolFeesSpecific(address, agent.poolAddress);
-                    let lifetimeClaimedPool = "0";
-                    if (Object.keys(claimedPools).length != 0) {
-                        const keys = Object.keys(claimedPools);
-                        const firstKey = keys[0];
-                        lifetimeClaimedPool = claimedPools[firstKey].value;
-                    }
-                    const lifetimeClaimedPoolFormatted = formatBNToDisplayDecimals(
-                        toBN(lifetimeClaimedPool),
-                        fasset.includes("XRP") ? 3 : 8,
-                        Number(settings.assetDecimals)
-                    );
-                    const lifetimeClaimedPoolUSDFormatted = calculateUSDValue(
-                        toBN(lifetimeClaimedPool),
-                        priceAsset.price,
-                        Number(priceAsset.decimals),
-                        Number(settings.assetDecimals),
-                        3
-                    );
-                    const agentPool = {
+
+                    const claimed = await this.getLifetimeClaimedPool(address, agent.poolAddress, fasset, assetDecimals, assetPrice);
+
+                    const agentPool: AgentPoolItem = {
                         vault: agent.vaultAddress,
                         pool: agent.poolAddress,
                         totalPoolCollateral: agent.totalPoolCollateral,
                         poolCR: Number(agent.poolCR).toFixed(2),
                         vaultCR: Number(agent.vaultCR).toFixed(2),
-                        userPoolBalance: formatBNToDisplayDecimals(balance, 3, 18),
-                        userPoolFees: formatBNToDisplayDecimals(toBN(fees), fasset.includes("XRP") ? 3 : 8, Number(settings.assetDecimals)),
+                        userPoolBalance: formatBigIntToDisplayDecimals(balance, 3, 18),
+                        userPoolFees: formatBigIntToDisplayDecimals(fees, fasset.includes("XRP") ? 3 : 8, assetDecimals),
                         feeShare: (Number(agent.feeShare) * 100).toFixed(0),
-                        userPoolNatBalance: formatFixed(toBN(userPoolNatBalance), 18, {
+                        userPoolNatBalance: formatFixedBigInt(userPoolNatBalance, 18, {
                             decimals: 3,
                             groupDigits: true,
                             groupSeparator: ",",
                         }),
-                        userPoolNatBalanceInUSD: formatFixed(toBN(userPoolNatBalanceUSD), Number(price.tokenPrice.decimals), {
+                        userPoolNatBalanceInUSD: formatFixedBigInt(userPoolNatBalanceUSD, 18 + Number(nativePrice.decimals), {
                             decimals: 6,
                             groupDigits: true,
                             groupSeparator: ",",
@@ -580,11 +590,10 @@ export class PoolService {
                         poolCollateralUSD: agent.poolNatUsd,
                         vaultCollateral: agent.vaultCollateral,
                         collateralToken: agent.vaultCollateralToken === "USDT" ? "USDT0" : agent.vaultCollateralToken,
-                        transferableTokens: formatBNToDisplayDecimals(transferableTokens, 3, 18),
+                        transferableTokens: formatBigIntToDisplayDecimals(transferableTokens, 3, 18),
                         tokenAddress: agent.tokenAddress,
-                        //fassetDebt: formatBNToDisplayDecimals(fassetDebt, Number(settings.assetDecimals), Number(settings.assetDecimals)), Uncomment if sending cpt enabled in FE
                         fassetDebt: "0",
-                        nonTimeLocked: formatBNToDisplayDecimals(nonTimeLocked, 3, 18),
+                        nonTimeLocked: formatBigIntToDisplayDecimals(nonTimeLocked, 3, 18),
                         mintingPoolCR: Number(agent.mintingPoolCR).toFixed(2),
                         mintingVaultCR: Number(agent.mintingVaultCR).toFixed(2),
                         vaultCCBCR: Number(1).toFixed(2),
@@ -606,30 +615,32 @@ export class PoolService {
                         totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
                         limitUSD: agent.limitUSD,
                         infoUrl: agent.infoUrl,
-                        lifetimeClaimedPoolFormatted: lifetimeClaimedPoolFormatted,
-                        lifetimeClaimedPoolUSDFormatted: lifetimeClaimedPoolUSDFormatted,
+                        lifetimeClaimedPoolFormatted: claimed.formatted,
+                        lifetimeClaimedPoolUSDFormatted: claimed.usdFormatted,
                         userPoolTokensFull: nonTimeLocked.toString(),
                     };
-                    pools.push(agentPool);
+                    resultPools.push(agentPool);
                 } catch (error) {
                     logger.error(`Error in getPoolsSpecific for specific user:`, error);
                     continue;
                 }
             }
-            return pools[0];
+            return resultPools[0];
         } catch (error) {
             throw error;
         }
     }
 
-    //TODO: add verification return
+    // ─── getAgents ──────────────────────────────────────────────────────
+
     async getAgents(fassets: string[]): Promise<AgentPoolItem[]> {
         try {
-            const pools = [];
+            const pools: AgentPoolItem[] = [];
             const now = Date.now();
+            const nativeSymbol = this.fassetConfigService.getNativeSymbol();
+
             for (const fasset of fassets) {
                 const agents = await this.em.find(Pool, { fasset });
-                const bot = this.botService.getUserBot(fasset);
 
                 for (const agent of agents) {
                     try {
@@ -637,17 +648,15 @@ export class PoolService {
                             continue;
                         }
                         const status = await this.getAgentLiveness(agent.vaultAddress, now);
-                        const vaultCollaterals = await this.em.find(Collateral, {
-                            fasset: fasset,
-                            token: agent.vaultToken,
-                        });
-                        const poolCollaterals = await this.em.find(Collateral, {
-                            fasset: fasset,
-                            tokenFtsoSymbol: bot.context.nativeChainInfo.tokenSymbol,
-                        });
+
+                        const [vaultCollaterals, poolCollaterals] = await Promise.all([
+                            this.em.find(Collateral, { fasset, token: agent.vaultToken }),
+                            this.em.find(Collateral, { fasset, tokenFtsoSymbol: nativeSymbol }),
+                        ]);
                         const vaultCollateral = vaultCollaterals[0];
                         const poolCollateral = poolCollaterals[0];
-                        const agentPool = {
+
+                        const agentPool: AgentPoolItem = {
                             vault: agent.vaultAddress,
                             pool: agent.poolAddress,
                             totalPoolCollateral: agent.totalPoolCollateral,
@@ -687,6 +696,8 @@ export class PoolService {
                             totalPortfolioValueUSD: agent.totalPortfolioValueUSD,
                             limitUSD: agent.limitUSD,
                             infoUrl: agent.infoUrl,
+                            // required fields from AgentPoolCommon/AgentPoolItem
+                            tokenAddress: agent.tokenAddress,
                         };
                         pools.push(agentPool);
                     } catch (error) {
@@ -702,21 +713,20 @@ export class PoolService {
         }
     }
 
+    // ─── getAgentSpecific ───────────────────────────────────────────────
+
     async getAgentSpecific(fasset: string, poolAddress: string): Promise<AgentPoolItem> {
         try {
-            const pools = [];
             const now = Date.now();
             const agent = await this.em.findOne(Pool, { poolAddress: poolAddress });
             const status = await this.getAgentLiveness(agent.vaultAddress, now);
-            const bot = this.botService.getUserBot(fasset);
-            const vaultCollateral = await this.em.findOne(Collateral, {
-                fasset: fasset,
-                token: agent.vaultToken,
-            });
-            const poolCollateral = await this.em.findOne(Collateral, {
-                fasset: fasset,
-                tokenFtsoSymbol: bot.context.nativeChainInfo.tokenSymbol,
-            });
+            const nativeSymbol = this.fassetConfigService.getNativeSymbol();
+
+            const [vaultCollateral, poolCollateral] = await Promise.all([
+                this.em.findOne(Collateral, { fasset, token: agent.vaultToken }),
+                this.em.findOne(Collateral, { fasset, tokenFtsoSymbol: nativeSymbol }),
+            ]);
+
             const agentPool: AgentPoolItem = {
                 vault: agent.vaultAddress,
                 pool: agent.poolAddress,
@@ -761,33 +771,42 @@ export class PoolService {
             };
             return agentPool;
         } catch (error) {
-            logger.error(`Error in getAgents:`, error);
+            logger.error(`Error in getAgentSpecific:`, error);
             throw error;
         }
     }
 
-    //TODO: add verification return
+    // ─── getAgentsLatest ────────────────────────────────────────────────
+
     async getAgentsLatest(fasset: string): Promise<AgentPoolLatest[]> {
         try {
             const agents = await this.em.find(Pool, { fasset });
-            const infoBot = this.botService.getInfoBot(fasset);
+            const assetManager = this.getAssetManager(fasset);
             const pools: AgentPoolLatest[] = [];
             const now = Date.now();
-            const vaults = await infoBot.getAvailableAgents();
-            const settings = await infoBot.context.assetManager.getSettings();
-            const tokenSupply = await infoBot.context.fAsset.totalSupply();
-            const lotSizeUBA = toBN(settings.lotSizeAMG).mul(toBN(settings.assetMintingGranularityUBA));
-            const mintingCap = toBN(settings.mintingCapAMG).mul(toBN(settings.assetMintingGranularityUBA));
-            const availableToMintUBA = mintingCap.toString() === "0" ? toBN(0) : mintingCap.sub(tokenSupply);
-            const availableToMintLots = mintingCap.toString() === "0" ? toBN(0) : availableToMintUBA.div(lotSizeUBA);
+
+            // Fetch available agents list from the asset manager contract
+            const [settingsResult, availableResult, fAssetContract] = await Promise.all([
+                assetManager.getSettings(),
+                assetManager.getAvailableAgentsDetailedList(0, 1000),
+                Promise.resolve(this.getFAsset(fasset)),
+            ]);
+            const settings = settingsResult;
+            const vaults = availableResult._agents;
+            const tokenSupply = await fAssetContract.totalSupply();
+
+            const lotSizeUBA = settings.lotSizeAMG * settings.assetMintingGranularityUBA;
+            const mintingCap = settings.mintingCapAMG * settings.assetMintingGranularityUBA;
+            const availableToMintUBA = mintingCap === 0n ? 0n : mintingCap - tokenSupply;
+            const availableToMintLots = mintingCap === 0n ? 0n : availableToMintUBA / lotSizeUBA;
+
             for (const agent of agents) {
                 try {
                     if (agent.status != 0 || !agent.publiclyAvailable || agent.vaultAddress.toLowerCase() === FILTER_AGENT) {
                         continue;
                     }
-                    //const info = await infoBot.context.assetManager.getAgentInfo(agent.vaultAddress);
                     const info = vaults.find((v) => v.agentVault === agent.vaultAddress);
-                    if (Number(info.freeCollateralLots) == 0) {
+                    if (!info || Number(info.freeCollateralLots) == 0) {
                         continue;
                     }
                     const status = await this.getAgentLiveness(agent.vaultAddress, now);
@@ -795,10 +814,7 @@ export class PoolService {
                     const vaultcr = Number(agent.vaultCR);
                     const poolExitCR = Number(agent.poolExitCR);
                     const feeBIPS = info.feeBIPS;
-                    const lots =
-                        mintingCap.toString() === "0"
-                            ? Number(info.freeCollateralLots.toString())
-                            : Math.min(Number(info.freeCollateralLots.toString()), availableToMintLots.toNumber());
+                    const lots = mintingCap === 0n ? Number(info.freeCollateralLots) : Math.min(Number(info.freeCollateralLots), Number(availableToMintLots));
                     const agentPool = {
                         vault: agent.vaultAddress,
                         totalPoolCollateral: agent.totalPoolCollateral,

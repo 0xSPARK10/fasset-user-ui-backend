@@ -1,0 +1,75 @@
+[
+    {
+        "name": "WNat",
+        "contractName": "WNat.sol",
+        "address": "0x767b25A658E8FC8ab6eBbd52043495dB61b4ea91"
+    },
+    {
+        "name": "Relay",
+        "contractName": "Relay.sol",
+        "address": "0x051f214D346Cfd97B107BECb87E2B35D1b4287E9"
+    },
+    {
+        "name": "FdcHub",
+        "contractName": "FdcHub.sol",
+        "address": "0x1c78A073E3BD2aCa4cc327d55FB0cD4f0549B55b"
+    },
+    {
+        "name": "FdcVerification",
+        "contractName": "FdcVerification.sol",
+        "address": "0x57a2db68fb40f6C61342FF4beF283AE185eA8E51"
+    },
+    {
+        "name": "testUSDC",
+        "contractName": "IERC20.sol",
+        "address": "0x5e39AE8faE5cDE76BcfD67a1E373135b8caa2735",
+        "mustSwitchToProduction": true
+    },
+    {
+        "name": "testUSDT",
+        "contractName": "IERC20.sol",
+        "address": "0xf5C1C61d9f5b6b5Ad2c6A9a78F1aBC0D6c8f0D9B",
+        "mustSwitchToProduction": true
+    },
+    {
+        "name": "testETH",
+        "contractName": "IERC20.sol",
+        "address": "0xaE92fB7EfA59B92Ae130e97a711358707C9701E8",
+        "mustSwitchToProduction": true
+    },
+    {
+        "name": "PriceReader",
+        "contractName": "FtsoV2PriceStoreProxy.sol",
+        "address": "0x14150aEeced5c1b318b0a78b0bBd8ca73ac891e4"
+    },
+    {
+        "name": "AgentOwnerRegistry",
+        "contractName": "AgentOwnerRegistryProxy.sol",
+        "address": "0x48985D96B5758285cB2c1A528c02da08BB874651"
+    },
+    {
+        "name": "CollateralPoolProxyImplementation",
+        "contractName": "CollateralPool.sol",
+        "address": "0x6351C67FC18dEDB3A89EC84762d4e84AeBa30666"
+    },
+    {
+        "name": "AssetManagerController",
+        "contractName": "AssetManagerControllerProxy.sol",
+        "address": "0x572DeF121DC83332887E25e34aD51C2f5f40BC97"
+    },
+    {
+        "name": "AssetManager_FTestXRP",
+        "contractName": "AssetManager.sol",
+        "address": "0x56728e46908fB6FcC5BCD2cc0c0F9BB91C3e4D34"
+    },
+    {
+        "name": "FTestXRP",
+        "contractName": "FAssetProxy.sol",
+        "address": "0x36be8f2e1CC3339Cf6702CEfA69626271C36E2fd"
+    },
+    {
+        "name": "CoreVaultManager_FTestXRP",
+        "contractName": "CoreVaultManagerProxy.sol",
+        "address": "0xCC9206d850fb9140019E78e6b2B309193a34DA3c"
+    }
+]

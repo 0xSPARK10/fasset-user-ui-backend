@@ -18,24 +18,13 @@ USER node
 # Copy the rest of the application source code
 COPY --chown=node . .
 
-# Set permissions for secrets.json
-#RUN chmod 600 ./src/secrets.json
-
-RUN git submodule update --init --recursive
-
-WORKDIR /app/fasset-bots
-
-RUN yarn
-RUN yarn build
-
-WORKDIR /app
-
 # Build the NestJS application
 RUN yarn
-#RUN yarn build
+
+RUN yarn build
 
 # Expose port 3001
 EXPOSE 3001
 #Build with sudo docker build -f Dockerfile -t demodapp ../../
 # Start the application
-#CMD ["yarn", "run", "start"]
+CMD ["yarn", "run", "start"]

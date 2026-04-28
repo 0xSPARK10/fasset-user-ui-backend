@@ -1,8 +1,6 @@
-import BN from "bn.js";
-
-export interface Price {
+export interface PriceBigInt {
     symbol: string;
-    price: BN;
+    price: bigint;
     decimals: number;
 }
 
@@ -35,7 +33,8 @@ export interface RedemptionData {
 
 export interface RedemptionIncomplete {
     redeemer: string;
-    remainingLots: string;
+    remainingLots?: string;        // from RedemptionRequestIncomplete (lot-based)
+    remainingAmountUBA?: string;   // from RedemptionAmountIncomplete (amount-based)
 }
 
 export interface SupplyFasset {
