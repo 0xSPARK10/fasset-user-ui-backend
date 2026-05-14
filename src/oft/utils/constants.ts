@@ -31,7 +31,7 @@ export const coston2OFTConfig: OFTConfig = {
 
 export const flareOFTConfig: OFTConfig = {
     OFTAdapterAddress: "0xd70659a6396285BF7214d7Ea9673184e7C72E07E",
-    FAssetRedeemComposerAddress: "0xF32eB6bf2Bc005Fa85eb61dBdc55Fcd60054B281",
+    FAssetRedeemComposerAddress: "0x9692EDBB253ef6f5459A498A93E34674B333cC69",
     HypeComposerAddress: "0xe4532B497dC5cdac694CC2EdF02AFCF14C3cDBd0".toLowerCase(),
     AssetManagerAddress: "0x2a3Fe068cD92178554cabcf7c95ADf49B4B0B6A8",
     EndpointV2Address: "0x1a44076050125825900e736c501f859c50fE728c",

@@ -58,5 +58,15 @@
         "name": "CoreVaultManager_FXRP",
         "contractName": "CoreVaultManagerProxy.sol",
         "address": "0x6c8d96dEfE4cbEE05FA969Fc0Ac436d94Fc21784"
+    },
+    {
+        "name": "MintingTagManager_FXRP",
+        "contractName": "MintingTagManager.sol",
+        "address": "0xb426b5AE61c23fF1B901a8AD1f1A3921D1E9D2F1"
+    },
+    {
+        "name": "MasterAccountController_FXRP",
+        "contractName": "IMasterAccountController.sol",
+        "address": "0x434936d47503353f06750Db1A444DBDC5F0AD37c"
     }
 ]
