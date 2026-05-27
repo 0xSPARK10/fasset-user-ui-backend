@@ -28,30 +28,10 @@ export class LotSize {
 }
 
 export class RequestMint {
-    @ApiProperty({ example: "FTestXRP" })
-    fasset: string;
-    @ApiProperty({ example: "123456" })
-    collateralReservationId: string;
-    @ApiProperty({
-        example: "8DD8A7C2AC0387C2BA39C52496990CF05137C987E8A2CEB0B81A4A04FA6AF4E4",
-    })
-    txhash: string;
-    @ApiProperty({ example: "rajgVNW9b4H4ifvB1238kfgsSJYesXwwtv" })
-    paymentAddress: string;
     @ApiProperty({ example: "rajgVNW9b4H4ifvB1238kfgsSJYesXwwtv" })
     userUnderlyingAddress: string;
     @ApiProperty({ example: "0x0048508b510502555ED47E98dE98Dd6426dDd0C4" })
     userAddress: string;
-    @ApiProperty({ example: "40" })
-    amount: string;
-    @ApiProperty({
-        example: "0x846aaa6fb67fce71b4daa2256e06f0061c4b0bf4c19c037bd047d85aef30413e",
-    })
-    nativeHash: string;
-    @ApiProperty({
-        example: "0x0048508b510502555ED47E98dE98Dd6426dDd0C4",
-    })
-    vaultAddress: string;
     @ApiProperty({
         enum: WalletType,
         description: "Wallet type",
@@ -691,6 +671,19 @@ export class PoolRewards {
     rewardsUSD: string;
 }
 
+export class Limits {
+    @ApiProperty()
+    hourlyLimitDrops: string;
+    @ApiProperty()
+    hourlyMintedDrops: string;
+    @ApiProperty()
+    dailyLimitDrops: string;
+    @ApiProperty()
+    dailyMintedDrops: string;
+    @ApiProperty()
+    decimals: number;
+}
+
 export class EcosystemData {
     @ApiProperty()
     tvl: string;
@@ -726,6 +719,8 @@ export class EcosystemData {
     numHolders: number;
     @ApiProperty()
     agentCollateral: string;
+    @ApiProperty({ type: Limits })
+    limits: Limits;
 }
 
 export class TimeDataCV {
@@ -756,6 +751,8 @@ export class TimeData {
     mintGraph: TimeSeries[];
     @ApiProperty({ type: [TimeSeries] })
     redeemGraph: TimeSeries[];
+    @ApiProperty({ type: [TimeSeries] })
+    tvlGraph: TimeSeries[];
     @ApiProperty({ type: [TopPool] })
     bestPools: TopPool[];
     @ApiProperty()

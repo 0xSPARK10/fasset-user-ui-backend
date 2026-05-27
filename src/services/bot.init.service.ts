@@ -7,12 +7,13 @@ import * as cron from "node-cron";
 import { ConfigService } from "@nestjs/config";
 import { Liveness } from "../entities/AgentLiveness";
 import { readFileSync } from "fs";
-import { EMPTY_SUPPLY_BY_COLLATERAL, FILTER_AGENT, NETWORK_SYMBOLS, PROOF_OF_RESERVE } from "src/utils/constants";
+import { EMPTY_SUPPLY_BY_COLLATERAL, NETWORK_SYMBOLS, PROOF_OF_RESERVE } from "src/utils/constants";
 import {
     CurrencyMap,
     EcosystemData,
     AssetManagerFasset,
     FassetDecimals,
+    Limits,
     PoolRewards,
     PriceBigInt,
     SupplyFasset,
@@ -38,7 +39,13 @@ import { TimeDataService } from "./time.data.service";
 import { ContractService } from "./contract.service";
 import { FassetConfigService } from "./fasset.config.service";
 import type { IIAssetManager, IFAsset, IPriceReader, ICollateralPool, IAgentOwnerRegistry } from "../typechain-ethers-v6";
-import { IPriceReader__factory, ICollateralPool__factory, ICollateralPoolToken__factory, IAgentOwnerRegistry__factory } from "../typechain-ethers-v6";
+import {
+    IPriceReader__factory,
+    ICollateralPool__factory,
+    ICollateralPoolToken__factory,
+    IAgentOwnerRegistry__factory,
+    IICoreVaultManager__factory,
+} from "../typechain-ethers-v6";
 import { EthersService } from "./ethers.service";
 
 /** VAULT collateral class constant (matches CollateralClass.VAULT from fasset-bots-core) */
@@ -106,6 +113,14 @@ export class BotService implements OnModuleInit {
     coreVaultOutflows: string = "0";
     coreVaultOutflowsUSD: string = "0";
     proofOfReserve: ProofOfReserve = PROOF_OF_RESERVE;
+    /** Direct-minting throttle snapshot from the default (FXRP) asset manager. */
+    limits: Limits = {
+        hourlyLimitDrops: "0",
+        hourlyMintedDrops: "0",
+        dailyLimitDrops: "0",
+        dailyMintedDrops: "0",
+        decimals: 0,
+    };
 
     constructor(
         private readonly orm: MikroORM,
@@ -239,7 +254,7 @@ export class BotService implements OnModuleInit {
     //Get time data for landing page
     async getTimeData(): Promise<void> {
         try {
-            await this.timeDataService.updateTimeData(this.topPools, this.fassetList, this.envType);
+            await this.timeDataService.updateTimeData(this.fassetList, this.envType);
         } catch (error) {
             logger.error(`'Error running update time data:`, error);
         }
@@ -273,7 +288,10 @@ export class BotService implements OnModuleInit {
 
     async getPools(): Promise<void> {
         logger.info(`Updating pools`);
-        let currentTVL = "0";
+        // USD value of the minted target-fasset (FXRP / FTestXRP) total supply,
+        // used as the ecosystem TVL exposed by getEcosystemInfo().
+        let fassetMintedUSD = "0";
+        const targetTvlFasset = this.envType == "dev" ? "FTestXRP" : "FXRP";
         let mintedAll = "0";
         const supplyFasset: SupplyFasset[] = [];
         const supplyCollateral: SupplyTotalCollateral[] = [];
@@ -305,9 +323,6 @@ export class BotService implements OnModuleInit {
         }
         this.numRedeems = redeemedLots;
 
-        //Get top pools with min 500k sgb in nat wei pool collateral
-        const topPools = await this.externalApiService.getBestPerformingPools(4, "500000000000000000000000");
-        const bestPools: TopPoolData[] = [];
         //let overCollaterazied = "0";
 
         const nativeSymbol = this.fassetConfigService.getNativeSymbol();
@@ -477,7 +492,6 @@ export class BotService implements OnModuleInit {
                     );
                     const totalCollateralUSD = sumUsdStrings(poolOnlyCollateralUSD, vaultOnlyCollateralUSD);
                     totalCollateral = sumUsdStrings(totalCollateral, totalCollateralUSD);
-                    currentTVL = sumUsdStrings(currentTVL, poolOnlyCollateralUSD);
                     const poolNatBalance = await (pool as ICollateralPool).totalCollateral();
                     const totalSupply = await poolToken.totalSupply();
                     const agentPoolCollateralVal = totalSupply === 0n ? 0n : ((await poolToken.balanceOf(agent)) * poolNatBalance) / totalSupply;
@@ -521,7 +535,7 @@ export class BotService implements OnModuleInit {
                         groupDigits: true,
                         groupSeparator: ",",
                     });
-                    mintedReservedUBA = mintedReservedUBA + info.mintedUBA + info.reservedUBA;
+                    mintedReservedUBA = mintedReservedUBA + info.mintedUBA + info.reservedUBA + info.redeemingUBA;
                     mintedUBA = mintedUBA + info.mintedUBA;
                     //supplyFa.minted = sumUsdStrings(supplyFa.minted, mintedUSDFormatted);
                     const allLots = Number(mintedReservedLots) + Number(info.freeCollateralLots);
@@ -697,7 +711,6 @@ export class BotService implements OnModuleInit {
                     const totalCollateralUSD = sumUsdStrings(poolOnlyCollateralUSD, vaultOnlyCollateralUSD);
                     totalCollateral = sumUsdStrings(totalCollateral, totalCollateralUSD);
                     tvlpoolsnat = sumUsdStrings(tvlpoolsnat, totalPoolCollateral);
-                    currentTVL = sumUsdStrings(currentTVL, poolOnlyCollateralUSD);
                     const poolTokenAddress = await pool.poolToken();
                     const poolToken = ICollateralPoolToken__factory.connect(poolTokenAddress, provider);
                     const poolNatBalance = await pool.totalCollateral();
@@ -885,6 +898,11 @@ export class BotService implements OnModuleInit {
                 groupDigits: true,
                 groupSeparator: ",",
             });
+            // Ecosystem TVL now reflects the USD value of minted target fasset (FXRP / FTestXRP),
+            // not pool NAT collateral.
+            if (fasset === targetTvlFasset) {
+                fassetMintedUSD = supplyFa.minted;
+            }
             if ((await this.em.count(Pool, { fasset })) == 0) {
                 //calculate price of fees
                 rewardsAvailableUSD = sumUsdStrings(rewardsAvailableUSD, "0");
@@ -989,13 +1007,29 @@ export class BotService implements OnModuleInit {
                 );
                 this.coreVaultSupply = formatFixedBigInt(cvTotal, 6, { decimals: 2, groupDigits: true, groupSeparator: "," });
                 this.coreVaultSupplyUSD = cvTotalUSDFormatted;
-                const now = Math.floor(Date.now() / 1000);
-                const proofOfReserveNow = await this.externalApiService.getCVratio("timestamps=" + now);
-                let porRatioNow = proofOfReserveNow["FXRP"] ? proofOfReserveNow["FXRP"][0].value : 1.003;
-                if (!proofOfReserveNow["FXRP"] || porRatioNow < 1) {
-                    porRatioNow = 1.003;
+                // Proof-of-reserve ratio is now computed directly from the on-chain
+                // Core Vault Manager balances instead of querying the external indexer.
+                // ratio = (availableFunds + escrowedFunds) / fAssetTotalSupply.
+                // If the resulting ratio is below 1 (i.e. under-reserved), we floor it
+                // to 1.003 so the displayed value never drops below 100.30%.
+                const coreVaultManagerAddress = await assetManager.getCoreVaultManager();
+                const coreVaultManager = IICoreVaultManager__factory.connect(coreVaultManagerAddress, provider);
+                const [availableFunds, escrowedFunds] = await Promise.all([coreVaultManager.availableFunds(), coreVaultManager.escrowedFunds()]);
+                const cvFunds = availableFunds + escrowedFunds + mintedReservedUBA;
+                // Compute the ratio in fixed-point (1e10 scale) to retain precision.
+                let porRatioFixed = faSupply === 0n ? bigintPow10(10) : (cvFunds * bigintPow10(10)) / faSupply;
+                if (porRatioFixed < bigintPow10(10)) {
+                    // Floor: 1.003 in 1e10 fixed-point.
+                    porRatioFixed = toBNDecimalBigInt(1.003, 10);
                 }
-                const porRatioBN = toBNDecimalBigInt(porRatioNow, 10);
+                // Round porRatioFixed UP so the *displayed percentage* (raw * 100)
+                // is ceilinged to 2 decimal places. Since raw is multiplied by 100
+                // for display, the ceiling step on raw is 0.0001 — i.e. 1e6 in the
+                // 1e10 fixed-point scale. Examples: raw 1.000001472 → 1.0001 → "100.01";
+                // raw 1.000000127 → 1.0001 → "100.01".
+                const ratioCeilStep = bigintPow10(6);
+                porRatioFixed = ((porRatioFixed + ratioCeilStep - 1n) / ratioCeilStep) * ratioCeilStep;
+                const porRatioBN = porRatioFixed;
                 const totalReserve = (faSupply * porRatioBN) / 10000000000n;
                 const reserveUSDFormatted = calculateUSDValueBigInt(
                     totalReserve,
@@ -1010,7 +1044,10 @@ export class BotService implements OnModuleInit {
                     ratioCalc = 100;
                 }
 
-                const ratioFormatted = ratioCalc.toFixed(2);
+                // Format to 2 decimals, then strip any trailing zeros (and a trailing
+                // decimal point if the fractional part is empty). E.g. "100.30" -> "100.3",
+                // "100.00" -> "100".
+                const ratioFormatted = ratioCalc.toFixed(2).replace(/\.?0+$/, "");
                 const proofOfReserve: ProofOfReserve = {
                     total: supplyFa.supply,
                     totalUSD: supplyFa.minted,
@@ -1019,39 +1056,6 @@ export class BotService implements OnModuleInit {
                     ratio: ratioFormatted,
                 };
                 this.proofOfReserve = proofOfReserve;
-            }
-            //Process top pools for this fasset
-            //TODO change for real and production use
-            const faNetw = NETWORK_SYMBOLS.find((n) => (this.envType == "dev" ? n.test : n.real) == fasset);
-            if (!topPools[faNetw.real]) {
-                continue;
-            }
-            for (const tp of topPools[faNetw.real]) {
-                const agent = await this.em.findOne(Pool, { poolAddress: tp.pool });
-                if (!agent) {
-                    continue;
-                }
-                // Special check if indexer returns filtered agent or if we already processed 3 top pools.
-                if (agent.vaultAddress.toLowerCase() === FILTER_AGENT || bestPools.length == 3) {
-                    continue;
-                }
-                const claimedUSDFormatted = calculateUSDValueBigInt(
-                    BigInt(tp.claimed),
-                    existingPriceAsset.price,
-                    existingPriceAsset.decimals,
-                    Number(settings.assetDecimals),
-                    3
-                );
-                bestPools.push({
-                    name: agent.agentName,
-                    vaultAddress: agent.vaultAddress,
-                    poolAddress: agent.poolAddress,
-                    fasset: fasset,
-                    collateralSymbol: agent.vaultCollateralToken,
-                    tvl: agent.poolOnlyCollateralUSD,
-                    rewardsPaid: claimedUSDFormatted,
-                    url: agent.url,
-                });
             }
         }
         const numOfLiq = await this.externalApiService.getTotalLiquidationCount();
@@ -1070,7 +1074,7 @@ export class BotService implements OnModuleInit {
                 c.symbol = "USDT0";
             }
         }
-        this.ecosystemTVL = currentTVL;
+        this.ecosystemTVL = fassetMintedUSD;
         this.mintedAll = mintedAll;
         this.fassetCirculatingSupply = supplyFasset;
         this.agentsInLiquidation = agentsLiq;
@@ -1084,14 +1088,75 @@ export class BotService implements OnModuleInit {
         //this.numMints = numMints;
         this.totalPoolRewardsPaidUSD = sumUsdStrings(totalPoolPaidUSD, rewardsAvailableUSD);
         this.poolRewards = poolPaid;
-        this.topPools = bestPools;
+        // Top pools indexer/DB lookup removed — keep `this.topPools` populated with a
+        // static single-pool placeholder so any consumer relying on the field shape works.
+        this.topPools = [
+            {
+                name: "Placeholder Pool",
+                vaultAddress: "0x0000000000000000000000000000000000000000",
+                poolAddress: "0x0000000000000000000000000000000000000000",
+                fasset: this.fassetList[0] ?? "",
+                collateralSymbol: "",
+                tvl: "0",
+                rewardsPaid: "0",
+                url: "",
+            },
+        ];
         this.agentPoolCollateral = agentPoolCollateralOnly;
         const numTransactions = await this.externalApiService.getPoolTransactionCount();
         if (Number(numTransactions) != 0 || Number(this.ecosystemTransactions) == 0) {
             this.ecosystemTransactions = numTransactions;
         }
+        await this.updateDirectMintingLimits();
         //TODO change core vault supply to actual core vault balance
         logger.info(`Finish updating pools`);
+    }
+
+    /**
+     * Refreshes the direct-minting throttle snapshot from the default (FXRP) asset manager.
+     * Reads hourly/daily caps and how much has already been minted within each window.
+     * Failure is swallowed (logged) so a missing/older asset manager does not break the pool update.
+     */
+    private async updateDirectMintingLimits(): Promise<void> {
+        const defaultFasset = this.fassetList[0];
+        const assetManager = this.assetManagerMap.get(defaultFasset);
+        const fAsset = this.fAssetMap.get(defaultFasset);
+        if (!assetManager) {
+            return;
+        }
+        try {
+            const [dailyLimit, dailyState, hourlyLimit, hourlyState, settings] = await Promise.all([
+                assetManager.getDirectMintingDailyLimitUBA(),
+                assetManager.getDirectMintingDailyLimiterState(),
+                assetManager.getDirectMintingHourlyLimitUBA(),
+                assetManager.getDirectMintingHourlyLimiterState(),
+                assetManager.getSettings(),
+            ]);
+
+            let effectiveDailyLimit = dailyLimit;
+            let effectiveHourlyLimit = hourlyLimit;
+
+            // The fasset-wide minting cap can be more restrictive than the per-window throttles.
+            // Clamp each window's reported limit to the remaining headroom (cap - totalSupply) so
+            // the FE never advertises a window limit the chain would reject for exceeding the cap.
+            const mintingCap = settings.mintingCapAMG * settings.assetMintingGranularityUBA;
+            if (mintingCap !== 0n && fAsset) {
+                const totalSupply = await fAsset.totalSupply();
+                const remaining = mintingCap > totalSupply ? mintingCap - totalSupply : 0n;
+                if (effectiveDailyLimit > remaining) effectiveDailyLimit = remaining;
+                if (effectiveHourlyLimit > remaining) effectiveHourlyLimit = remaining;
+            }
+
+            this.limits = {
+                hourlyLimitDrops: effectiveHourlyLimit.toString(),
+                hourlyMintedDrops: hourlyState._mintedInCurrentWindow.toString(),
+                dailyLimitDrops: effectiveDailyLimit.toString(),
+                dailyMintedDrops: dailyState._mintedInCurrentWindow.toString(),
+                decimals: this.getFassetDecimals(defaultFasset),
+            };
+        } catch (error) {
+            logger.error(`Error fetching direct minting limits for ${defaultFasset}:`, error);
+        }
     }
 
     getEcosystemInfo(): EcosystemData {
@@ -1121,6 +1186,7 @@ export class BotService implements OnModuleInit {
             coreVaultOutflows: this.coreVaultOutflows,
             coreVaultOutflowsUSD: this.coreVaultOutflowsUSD,
             proofOfReserve: this.proofOfReserve,
+            limits: this.limits,
         };
     }
 

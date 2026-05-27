@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { EntityManager } from "@mikro-orm/core";
 import { OFTRedemption } from "src/entities/OFTRedemption";
 import { OFTRedemptionFailed } from "src/entities/OFTRedemptionFailed";
+import { OFTComposerFeeCollected } from "src/entities/OFTComposerFeeCollected";
 import { ComposerFeeResponse, OFTHistory, RedeemerAccountResponse, RedemptionFeesResponse, RedemptionOFT } from "src/interfaces/requestResponse";
 import { OFTSent } from "src/entities/OFTSent";
 import { OFTReceived } from "src/entities/OFTReceived";
@@ -95,12 +96,13 @@ export class OFTService {
         // Batch-fetch all data needed for redeem processing
         const allGuids = [...new Set(oftRedemptions.map((r) => r.guid))];
         const allRequestIds = oftRedemptions.map((r) => r.requestId);
-        const [incompleteRedeems, amountIncompleteRedeems, oftReceivedByGuidList, defaultEventsList, allCollaterals] = await Promise.all([
+        const [incompleteRedeems, amountIncompleteRedeems, oftReceivedByGuidList, defaultEventsList, allCollaterals, composerFeesList] = await Promise.all([
             this.em.find(IncompleteRedemption, { txhash: { $in: redeemHashes } }),
             this.em.find(RedemptionAmountIncompleteEvent, { txhash: { $in: redeemHashes } }),
             allGuids.length > 0 ? this.em.find(OFTReceived, { guid: { $in: allGuids } }) : Promise.resolve([]),
             allRequestIds.length > 0 ? this.em.find(RedemptionDefault, { requestId: { $in: allRequestIds } }) : Promise.resolve([]),
             this.em.find(Collateral, {}),
+            allGuids.length > 0 ? this.em.find(OFTComposerFeeCollected, { guid: { $in: allGuids } }) : Promise.resolve([]),
         ]);
 
         // Build lookup maps
@@ -115,6 +117,9 @@ export class OFTService {
         const oftReceivedByGuid = new Map(oftReceivedByGuidList.map((r) => [r.guid, r]));
         const defaultsByRequestId = new Map(defaultEventsList.map((d) => [d.requestId, d]));
         const collateralsBySymbol = new Map(allCollaterals.map((c) => [c.tokenFtsoSymbol, c]));
+        // Composer fee paid by the redeemer, keyed by redemption guid. Absent
+        // entries default to 0n (composer omits the event when fee == 0).
+        const composerFeeByGuid = new Map(composerFeesList.map((f) => [f.guid, BigInt(f.composerFee)]));
 
         for (const redeem of redeemHashes) {
             try {
@@ -125,9 +130,13 @@ export class OFTService {
                 const incomplete = !!incompleteData || !!amountIncompleteData;
                 const oftReceivedGuid = oftReceivedByGuid.get(tickets[0].guid);
                 const eid = oftReceivedGuid ? oftReceivedGuid.srcEid : tickets[0].srcEid;
+                // All tickets in this txhash share the same composer redemption (and guid),
+                // so the composer fee lookup is done once and added to the gross redemption
+                // amount displayed to the user.
+                const composerFee = composerFeeByGuid.get(tickets[0].guid) ?? 0n;
                 for (const ticket of tickets) {
                     const redemptionAmount = formatBigIntToDisplayDecimals(
-                        ticketValueUBA,
+                        ticketValueUBA + composerFee,
                         ticket.fasset.includes("XRP") ? 2 : 8,
                         ticket.fasset.includes("XRP") ? 6 : 8
                     );

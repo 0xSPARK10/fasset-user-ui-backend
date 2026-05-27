@@ -411,40 +411,40 @@ describe("UserService", () => {
     });
 
     describe("requestMinting", () => {
-        it("should return early when collateralReservationId is empty", async () => {
+        it("should persist a new underlying wallet when none exists", async () => {
+            mockEm.findOne.mockResolvedValue(null);
+
             await service.requestMinting({
-                fasset: "FTestXRP",
-                collateralReservationId: "",
-                txhash: "0xHash",
-                paymentAddress: "rAddr",
-                userUnderlyingAddress: "rUser",
-                userAddress: "0xUser",
-                amount: "100",
-                nativeHash: "0xNative",
-                vaultAddress: "0xVault",
+                userUnderlyingAddress: "rajgVNW9b4H4ifvB1238kfgsSJYesXwwtv",
+                userAddress: "0x0048508b510502555ED47E98dE98Dd6426dDd0C4",
+                underlyingWalletId: 1 as any,
+                nativeWalletId: 2 as any,
             });
 
-            // Should not try to save minting data
-            expect(mockEm.count).not.toHaveBeenCalled();
+            // One persistAndFlush per wallet (underlying + native).
+            expect(mockEm.persistAndFlush).toHaveBeenCalledTimes(2);
         });
 
-        it("should not duplicate minting if txhash already exists", async () => {
-            mockEm.count.mockResolvedValue(1); // already exists
-            mockEm.findOne.mockResolvedValue(null); // no wallet found
+        it("should skip persistence when wallets already exist", async () => {
+            mockEm.findOne.mockResolvedValue({ id: 1 });
 
             await service.requestMinting({
-                fasset: "FTestXRP",
-                collateralReservationId: "123",
-                txhash: "0xExistingHash",
-                paymentAddress: "rAddr",
-                userUnderlyingAddress: "rUser",
-                userAddress: "0xUser",
-                amount: "100",
-                nativeHash: "0xNative",
-                vaultAddress: "0xVault",
+                userUnderlyingAddress: "rajgVNW9b4H4ifvB1238kfgsSJYesXwwtv",
+                userAddress: "0x0048508b510502555ED47E98dE98Dd6426dDd0C4",
+                underlyingWalletId: 1 as any,
+                nativeWalletId: 2 as any,
             });
 
-            // Should not persist since it already exists
+            expect(mockEm.persistAndFlush).not.toHaveBeenCalled();
+        });
+
+        it("should skip both branches when wallet ids are not provided", async () => {
+            await service.requestMinting({
+                userUnderlyingAddress: "rajgVNW9b4H4ifvB1238kfgsSJYesXwwtv",
+                userAddress: "0x0048508b510502555ED47E98dE98Dd6426dDd0C4",
+            });
+
+            expect(mockEm.findOne).not.toHaveBeenCalled();
             expect(mockEm.persistAndFlush).not.toHaveBeenCalled();
         });
     });
@@ -551,35 +551,6 @@ describe("UserService", () => {
             const result = await service.getMintingEnabled();
 
             expect(result).toHaveLength(2);
-        });
-    });
-
-    describe("isValidRippleTxHash", () => {
-        it("should return true for valid 64 hex character hash", () => {
-            const validHash = "A".repeat(64);
-            expect(service.isValidRippleTxHash(validHash)).toBe(true);
-        });
-
-        it("should return true for lowercase hex hash", () => {
-            const validHash = "a1b2c3d4e5f6".padEnd(64, "0");
-            expect(service.isValidRippleTxHash(validHash)).toBe(true);
-        });
-
-        it("should return false for hash shorter than 64 chars", () => {
-            expect(service.isValidRippleTxHash("ABC123")).toBe(false);
-        });
-
-        it("should return false for hash longer than 64 chars", () => {
-            expect(service.isValidRippleTxHash("A".repeat(65))).toBe(false);
-        });
-
-        it("should return false for non-hex characters", () => {
-            const invalidHash = "G".repeat(64);
-            expect(service.isValidRippleTxHash(invalidHash)).toBe(false);
-        });
-
-        it("should return false for empty string", () => {
-            expect(service.isValidRippleTxHash("")).toBe(false);
         });
     });
 

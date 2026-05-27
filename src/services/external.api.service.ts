@@ -476,6 +476,33 @@ export class ExternalApiService {
         }
     }
 
+    /**
+     * Fetches the ecosystem FAsset TVL at each of the supplied unix-seconds timestamps.
+     * Backed by the indexer endpoint /api/dashboard/timespan/fasset-tvl, which expects
+     * one `timestamps=<unix>` query parameter per requested point and returns
+     * `[{ timestamp, value }]` (value in UBA, same scaling as the mint/redeem series).
+     */
+    async getFassetTVLTimespan(timestamps: string[]): Promise<any> {
+        if (this.apiUrl == undefined) {
+            return 0;
+        }
+        try {
+            const url = timestamps.map((t) => `&timestamps=${t}`).join("");
+            const data = await lastValueFrom(
+                this.httpService.get(this.apiUrl + "/dashboard/timespan/fasset-tvl?" + url, {
+                    headers: this.getAuthHeaders(),
+                })
+            );
+            if (data.data.status == 500) {
+                return 0;
+            }
+            return data.data.data;
+        } catch (error) {
+            logger.error(`Error in get fasset TVL timespan`, error);
+            return 0;
+        }
+    }
+
     async getMintTimeseries(endtime: number, npoints: number, startTime: number): Promise<any> {
         if (this.apiUrl == undefined) {
             return 0;

@@ -102,6 +102,7 @@ export function getDefaultTimeData(fasset: string): TimeData {
         supplyDiff: [{ fasset: fasset, diff: "0", isPositive: true }],
         mintGraph: [{ timestamp: now, value: "0" }],
         redeemGraph: [{ timestamp: now, value: "0" }],
+        tvlGraph: [{ timestamp: now, value: "0" }],
         bestPools: [],
         totalCollateralDiff: "0",
         isPositiveCollateralDiff: true,

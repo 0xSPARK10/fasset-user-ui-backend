@@ -57,6 +57,7 @@ import { EthersService } from "./services/ethers.service";
 import { FassetConfigService } from "./services/fasset.config.service";
 import { DalService } from "./services/dal.service";
 import { OFTRedemptionFailed } from "./entities/OFTRedemptionFailed";
+import { OFTComposerFeeCollected } from "./entities/OFTComposerFeeCollected";
 import { DirectMinting } from "./entities/DirectMinting";
 import { DirectMintingExecutedEvent } from "./entities/DirectMintingExecutedEvent";
 import { DirectMintingExecutedToSmartAccountEvent } from "./entities/DirectMintingExecutedToSmartAccountEvent";
@@ -94,6 +95,7 @@ import { DirectMintingScannerService } from "./services/direct.minting.scanner.s
             GuidRedemption,
             OFTRedemption,
             OFTRedemptionFailed,
+            OFTComposerFeeCollected,
             DirectMinting,
             DirectMintingExecutedEvent,
             DirectMintingExecutedToSmartAccountEvent,
@@ -107,7 +109,7 @@ import { DirectMintingScannerService } from "./services/direct.minting.scanner.s
             isGlobal: true,
         }),
         HttpModule.register({
-            timeout: 25000,
+            timeout: 250000,
             maxRedirects: 5,
         }),
         CacheModule.register({}),

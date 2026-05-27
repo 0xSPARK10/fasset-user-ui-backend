@@ -185,9 +185,10 @@ describe("MintController", () => {
     describe("requestMinting", () => {
         it("should call userService.requestMinting with the request body", async () => {
             const requestBody = {
-                fasset: "FTestXRP",
-                collateralReservationId: "123",
-                txHash: "0xTxHash",
+                userUnderlyingAddress: "rajgVNW9b4H4ifvB1238kfgsSJYesXwwtv",
+                userAddress: "0x0048508b510502555ED47E98dE98Dd6426dDd0C4",
+                underlyingWalletId: 1,
+                nativeWalletId: 2,
             } as any;
             userService.requestMinting.mockResolvedValue(undefined);
 
@@ -203,7 +204,7 @@ describe("MintController", () => {
             });
 
             expect(() =>
-                controller.requestMinting({ fasset: "FTestXRP" } as any)
+                controller.requestMinting({ userAddress: "0x0" } as any)
             ).toThrow(HttpException);
         });
     });

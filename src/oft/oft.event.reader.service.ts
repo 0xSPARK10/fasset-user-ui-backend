@@ -21,6 +21,7 @@ import { OFTSent } from "src/entities/OFTSent";
 import { OFTReceived } from "src/entities/OFTReceived";
 import { OFTRedemption } from "src/entities/OFTRedemption";
 import { OFTRedemptionFailed } from "src/entities/OFTRedemptionFailed";
+import { OFTComposerFeeCollected } from "src/entities/OFTComposerFeeCollected";
 import { ERC20__factory } from "src/typechain-ethers-v6";
 import { NativeBalanceItemTokenAddress } from "src/interfaces/requestResponse";
 import { formatBigIntToStringForceDecimals } from "src/utils/utils";
@@ -102,6 +103,12 @@ export class OFTEventReaderService implements OnModuleInit {
             address: this.oftConfig.FAssetRedeemComposerAddress,
             topics: [FAssetRedeemComposerEvents.getEvent("FAssetRedeemFailed").topicHash],
         };
+        // Composer fee event — only emitted when the per-redemption composer fee
+        // is greater than zero, so the result set may be smaller than fAssetRedeemed.
+        const composerFeeCollectedFilter = {
+            address: this.oftConfig.FAssetRedeemComposerAddress,
+            topics: [FAssetRedeemComposerEvents.getEvent("ComposerFeeCollected").topicHash],
+        };
         const [
             oftSentLogs,
             oftReceivedLogs,
@@ -111,6 +118,7 @@ export class OFTEventReaderService implements OnModuleInit {
             packetSentLogs,
             composeDeliveredLogs,
             fAssetRedeemFailedLogs,
+            composerFeeCollectedLogs,
         ] = await Promise.all([
             this.provider.getLogs({ fromBlock: fromBlock, toBlock: toBlock, address: oftSentFilter.address, topics: oftSentFilter.topics }),
             this.provider.getLogs({ fromBlock: fromBlock, toBlock: toBlock, address: oftReceivedFilter.address, topics: oftReceivedFilter.topics }),
@@ -145,6 +153,12 @@ export class OFTEventReaderService implements OnModuleInit {
                 address: fAssetRedeemFailedFilter.address,
                 topics: fAssetRedeemFailedFilter.topics,
             }),
+            this.provider.getLogs({
+                fromBlock: fromBlock,
+                toBlock: toBlock,
+                address: composerFeeCollectedFilter.address,
+                topics: composerFeeCollectedFilter.topics,
+            }),
         ]);
         return {
             oftSent: oftSentLogs,
@@ -155,6 +169,7 @@ export class OFTEventReaderService implements OnModuleInit {
             packetSent: packetSentLogs,
             composeDelivered: composeDeliveredLogs,
             fAssetRedeemFailed: fAssetRedeemFailedLogs,
+            composerFeeCollected: composerFeeCollectedLogs,
         };
     }
 
@@ -342,6 +357,24 @@ export class OFTEventReaderService implements OnModuleInit {
                 }
             } catch (error) {
                 logger.error(`Error in oft redemption processing:`, error);
+            }
+        }
+
+        // Persist `ComposerFeeCollected` events from the same fetch window. The
+        // composer emits these only when the per-redemption fee is > 0, so the
+        // count here is <= number of FAssetRedeemed logs. Each row is linked back
+        // to its redemption later via `guid` (one composer redemption → one fee).
+        for (const log of allLogs.composerFeeCollected) {
+            try {
+                const event = FAssetRedeemComposerEvents.parseLog(log);
+                const guid = event.args[0];
+                const srcEid = Number(event.args[1]);
+                const composerFeeRecipient = event.args[2];
+                const composerFee = event.args[3].toString();
+                const row = new OFTComposerFeeCollected(guid, srcEid, composerFeeRecipient, composerFee, this.fasset, now, log.transactionHash);
+                await this.em.persistAndFlush(row);
+            } catch (error) {
+                logger.error(`Error in oft composer fee processing:`, error);
             }
         }
     }

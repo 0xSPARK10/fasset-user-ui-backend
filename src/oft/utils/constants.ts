@@ -19,6 +19,9 @@ export interface OFTLogs {
     // AssetManager `RedemptionWithTagRequested` events — carry the 13th `destinationTag` arg
     // emitted when a redeemer requested a tag on the source chain.
     redemptionWithTagRequested: ethers.Log[];
+    // Composer fee events from the FAssetRedeemComposer contract. Only emitted when the
+    // composer fee is > 0, so a given redemption may have no corresponding event here.
+    composerFeeCollected: ethers.Log[];
 }
 
 export const coston2OFTConfig: OFTConfig = {
@@ -69,6 +72,9 @@ export const FAssetRedeemComposerEvents = new Interface([
     "event FAssetRedeemed(bytes32 indexed,uint32 indexed,address indexed,address,uint256,string,bool,uint256,address,uint256,uint256,uint256)",
     // guid, srcEid, redeemer, redeemerAccount, amountToRedeemUBA, wrappedAmount
     "event FAssetRedeemFailed(bytes32 indexed,uint32 indexed,address indexed,address,uint256,uint256)",
+    // guid, srcEid, composerFeeRecipient, composerFee. Emitted only when composer fee > 0;
+    // links back to a redemption via (guid, srcEid) — the same identifiers used by FAssetRedeemed.
+    "event ComposerFeeCollected(bytes32 indexed,uint32 indexed,address indexed,uint256)",
 ]);
 
 // Updated ABI: `getExecutorData()` was removed and replaced by the view

@@ -23,6 +23,7 @@ import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { Wallet } from "src/entities/Wallet";
 import { logger } from "src/logger/winston.logger";
 import { OFTRedemptionFailed } from "src/entities/OFTRedemptionFailed";
+import { OFTComposerFeeCollected } from "src/entities/OFTComposerFeeCollected";
 import { DirectMinting } from "src/entities/DirectMinting";
 import { DirectMintingExecutedEvent } from "src/entities/DirectMintingExecutedEvent";
 import { DirectMintingExecutedToSmartAccountEvent } from "src/entities/DirectMintingExecutedToSmartAccountEvent";
@@ -59,6 +60,7 @@ if (process.env.DB_TYPE === "sqlite") {
             GuidRedemption,
             OFTRedemption,
             OFTRedemptionFailed,
+            OFTComposerFeeCollected,
             DirectMinting,
             DirectMintingExecutedEvent,
             DirectMintingExecutedToSmartAccountEvent,
@@ -97,6 +99,7 @@ if (process.env.DB_TYPE === "sqlite") {
             GuidRedemption,
             OFTRedemption,
             OFTRedemptionFailed,
+            OFTComposerFeeCollected,
             DirectMinting,
             DirectMintingExecutedEvent,
             DirectMintingExecutedToSmartAccountEvent,

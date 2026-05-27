@@ -74,7 +74,6 @@ import { RedemptionRequested as RedemptionRequestedEntity } from "src/entities/R
 import { RedemptionWithTagRequestedEvent } from "src/entities/RedemptionWithTagRequestedEvent";
 import { RedemptionAmountIncompleteEvent } from "src/entities/RedemptionAmountIncompleteEvent";
 import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
-import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
 import { XRPLApiService } from "./xrpl-api.service";
 import { ChainType, Wallet } from "src/entities/Wallet";
 import { ContractService } from "./contract.service";
@@ -435,29 +434,6 @@ export class UserService {
                 await this.em.persistAndFlush(wallet);
             }
         }
-        if (requestMint.collateralReservationId == "") {
-            return;
-        }
-        const count = await this.em.count(Minting, { txhash: requestMint.txhash });
-        if (count != 0) {
-            //throw new LotsException("Minting with this txhash already exists.");
-            return;
-        }
-        let crEvent;
-        crEvent = await this.em.findOne(CollateralReservationEvent, { collateralReservationId: requestMint.collateralReservationId });
-        if (!crEvent) {
-            crEvent = (await this.getCREventFromTxHash(requestMint.fasset, requestMint.nativeHash, true)) as CREventExtended;
-        }
-        const now = new Date();
-        if (this.isValidRippleTxHash(requestMint.txhash)) {
-            const underlyingPayment = new UnderlyingPayment(crEvent.paymentReference, requestMint.txhash, now.getTime());
-            await this.em.persistAndFlush(underlyingPayment);
-        }
-    }
-
-    isValidRippleTxHash(hash: string): boolean {
-        const rippleTxHashRegex = /^[A-Fa-f0-9]{64}$/;
-        return rippleTxHashRegex.test(hash);
     }
 
     /**

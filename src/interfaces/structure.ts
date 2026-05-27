@@ -33,8 +33,8 @@ export interface RedemptionData {
 
 export interface RedemptionIncomplete {
     redeemer: string;
-    remainingLots?: string;        // from RedemptionRequestIncomplete (lot-based)
-    remainingAmountUBA?: string;   // from RedemptionAmountIncomplete (amount-based)
+    remainingLots?: string; // from RedemptionRequestIncomplete (lot-based)
+    remainingAmountUBA?: string; // from RedemptionAmountIncomplete (amount-based)
 }
 
 export interface SupplyFasset {
@@ -123,6 +123,7 @@ export interface TimeData {
     supplyDiff: FassetSupplyDiff[];
     mintGraph: TimeSeries[];
     redeemGraph: TimeSeries[];
+    tvlGraph: TimeSeries[];
     bestPools: TopPool[];
     totalCollateralDiff: string;
     isPositiveCollateralDiff: boolean;
@@ -156,6 +157,16 @@ export interface ProofOfReserve {
     ratio: string;
 }
 
+// Direct-minting throttle snapshot read from the FXRP AssetManager.
+// All UBA amounts are kept as strings since they're 256-bit integers.
+export interface Limits {
+    hourlyLimitDrops: string;
+    hourlyMintedDrops: string;
+    dailyLimitDrops: string;
+    dailyMintedDrops: string;
+    decimals: number;
+}
+
 export interface EcosystemData {
     tvl: string;
     tvlPoolsNat: string;
@@ -182,6 +193,7 @@ export interface EcosystemData {
     coreVaultOutflows: string;
     coreVaultOutflowsUSD: string;
     proofOfReserve: ProofOfReserve;
+    limits: Limits;
 }
 
 export interface AssetManagerFasset {

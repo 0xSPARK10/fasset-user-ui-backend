@@ -502,12 +502,11 @@ describe("BotService", () => {
     /* -------------------------------------------------------------- */
 
     describe("getTimeData", () => {
-        it("should call timeDataService.updateTimeData with topPools, fassetList, and envType", async () => {
+        it("should call timeDataService.updateTimeData with fassetList and envType", async () => {
             await service.getTimeData();
 
             expect(mockTimeDataService.updateTimeData).toHaveBeenCalledTimes(1);
             expect(mockTimeDataService.updateTimeData).toHaveBeenCalledWith(
-                [], // topPools (seeded as empty array)
                 ["FTestXRP"], // fassetList
                 "dev", // envType from configService
             );
