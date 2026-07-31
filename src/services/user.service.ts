@@ -58,7 +58,15 @@ import {
     timestampToDateString,
     dateStringToTimestamp,
 } from "src/utils/utils";
-import { EXECUTION_FEE, FILTER_AGENT, NETWORK_SYMBOLS, RedemptionStatusEnum, SONGBIRD_EXECUTOR_ADDRESS, SONGBIRD_EXECUTOR_FEE } from "src/utils/constants";
+import {
+    DEFAULT_CUSTOM_EXECUTOR_FEE,
+    EXECUTION_FEE,
+    FILTER_AGENT,
+    NETWORK_SYMBOLS,
+    RedemptionStatusEnum,
+    SONGBIRD_EXECUTOR_ADDRESS,
+    SONGBIRD_EXECUTOR_FEE,
+} from "src/utils/constants";
 import { ClaimedPools, EcosystemData, FullRedeemData, RedeemData, RedemptionData, RedemptionIncomplete, TimeData } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
 import { FullRedemption } from "src/entities/RedemptionWhole";
@@ -408,9 +416,23 @@ export class UserService {
         try {
             const assetManager = this.getAssetManager(fasset);
             const settings = await assetManager.getSettings();
+            const network = this.configService.get<string>("NETWORK", "coston2");
+            const customExecutor = this.configService.get<string>("CUSTOM_EXECUTOR");
+            let executorAddress: string;
+            let executorFee: string;
+            if (network === "songbird") {
+                executorAddress = SONGBIRD_EXECUTOR_ADDRESS;
+                executorFee = SONGBIRD_EXECUTOR_FEE;
+            } else if (customExecutor) {
+                executorAddress = customExecutor;
+                executorFee = this.configService.get<string>("CUSTOM_EXECUTOR_FEE") || DEFAULT_CUSTOM_EXECUTOR_FEE;
+            } else {
+                executorAddress = this.ethersService.getExecutorAddress();
+                executorFee = EXECUTION_FEE.toString();
+            }
             return {
-                executorAddress: this.ethersService.getExecutorAddress(),
-                executorFee: EXECUTION_FEE.toString(),
+                executorAddress,
+                executorFee,
                 redemptionFee: settings.redemptionFeeBIPS.toString(),
             };
         } catch (error) {
@@ -1597,14 +1619,15 @@ export class UserService {
 
     async getAssetPrice(fasset: string): Promise<AssetPrice> {
         try {
-            const cachedPrice = await this.cacheManager.get(fasset + "price");
-            if (!cachedPrice) {
+            const cacheKey = fasset + "-price";
+            const cachedPrice = await this.cacheManager.get(cacheKey);
+            if (cachedPrice === undefined) {
                 const priceReader = this.getPriceReader();
                 const fAsset = this.getFAsset(fasset);
                 const assetSymbol = await fAsset.assetSymbol();
                 const [price, , priceDecimals] = await priceReader.getPrice(assetSymbol);
                 const priceMul = Number(price) / 10 ** Number(priceDecimals);
-                await this.cacheManager.set(fasset + "-price", priceMul, 5000);
+                await this.cacheManager.set(cacheKey, priceMul, 5000);
                 return { price: priceMul };
             }
             return { price: Number(cachedPrice) };
@@ -1762,7 +1785,8 @@ export class UserService {
         }
         const controller = this.contractService.getMasterAccountControllerContract(fasset);
         const [executorAddress, executorFee] = await controller.getExecutorInfo();
-        return { executorAddress, executorFee: executorFee.toString() };
+        const customExecutor = this.configService.get<string>("CUSTOM_EXECUTOR");
+        return { executorAddress: customExecutor || executorAddress, executorFee: executorFee.toString() };
     }
 
     /**

@@ -9,8 +9,9 @@ import { OFTReceived } from "src/entities/OFTReceived";
 import { formatBigIntToDisplayDecimals, formatBigIntToStringForceDecimals } from "src/utils/utils";
 import { IncompleteRedemption } from "src/entities/RedemptionIncomplete";
 import { RedemptionAmountIncompleteEvent } from "src/entities/RedemptionAmountIncompleteEvent";
-import { RedemptionDefault } from "src/entities/RedemptionDefault";
+import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
 import { Collateral } from "src/entities/Collaterals";
+import { Pool } from "src/entities/Pool";
 import { logger } from "src/logger/winston.logger";
 import { OFTEventReaderService } from "./oft.event.reader.service";
 
@@ -96,14 +97,17 @@ export class OFTService {
         // Batch-fetch all data needed for redeem processing
         const allGuids = [...new Set(oftRedemptions.map((r) => r.guid))];
         const allRequestIds = oftRedemptions.map((r) => r.requestId);
-        const [incompleteRedeems, amountIncompleteRedeems, oftReceivedByGuidList, defaultEventsList, allCollaterals, composerFeesList] = await Promise.all([
-            this.em.find(IncompleteRedemption, { txhash: { $in: redeemHashes } }),
-            this.em.find(RedemptionAmountIncompleteEvent, { txhash: { $in: redeemHashes } }),
-            allGuids.length > 0 ? this.em.find(OFTReceived, { guid: { $in: allGuids } }) : Promise.resolve([]),
-            allRequestIds.length > 0 ? this.em.find(RedemptionDefault, { requestId: { $in: allRequestIds } }) : Promise.resolve([]),
-            this.em.find(Collateral, {}),
-            allGuids.length > 0 ? this.em.find(OFTComposerFeeCollected, { guid: { $in: allGuids } }) : Promise.resolve([]),
-        ]);
+        const allAgentVaults = [...new Set(oftRedemptions.map((r) => r.agentVault))];
+        const [incompleteRedeems, amountIncompleteRedeems, oftReceivedByGuidList, defaultEventsList, allCollaterals, composerFeesList, pools] =
+            await Promise.all([
+                this.em.find(IncompleteRedemption, { txhash: { $in: redeemHashes } }),
+                this.em.find(RedemptionAmountIncompleteEvent, { txhash: { $in: redeemHashes } }),
+                allGuids.length > 0 ? this.em.find(OFTReceived, { guid: { $in: allGuids } }) : Promise.resolve([]),
+                allRequestIds.length > 0 ? this.em.find(RedemptionDefaultEvent, { requestId: { $in: allRequestIds } }) : Promise.resolve([]),
+                this.em.find(Collateral, {}),
+                allGuids.length > 0 ? this.em.find(OFTComposerFeeCollected, { guid: { $in: allGuids } }) : Promise.resolve([]),
+                allAgentVaults.length > 0 ? this.em.find(Pool, { vaultAddress: { $in: allAgentVaults } }) : Promise.resolve([]),
+            ]);
 
         // Build lookup maps
         const redemptionsByTxhash = new Map<string, OFTRedemption[]>();
@@ -117,6 +121,7 @@ export class OFTService {
         const oftReceivedByGuid = new Map(oftReceivedByGuidList.map((r) => [r.guid, r]));
         const defaultsByRequestId = new Map(defaultEventsList.map((d) => [d.requestId, d]));
         const collateralsBySymbol = new Map(allCollaterals.map((c) => [c.tokenFtsoSymbol, c]));
+        const poolsByVaultAddress = new Map(pools.map((pool) => [pool.vaultAddress, pool]));
         // Composer fee paid by the redeemer, keyed by redemption guid. Absent
         // entries default to 0n (composer omits the event when fee == 0).
         const composerFeeByGuid = new Map(composerFeesList.map((f) => [f.guid, BigInt(f.composerFee)]));
@@ -152,14 +157,17 @@ export class OFTService {
                         const defaultEvent = defaultsByRequestId.get(ticket.requestId);
                         amount = "0";
                         if (defaultEvent) {
-                            const collateral = collateralsBySymbol.get(defaultEvent.collateralToken);
-                            vaultCollateralRedeemed = formatBigIntToDisplayDecimals(
-                                BigInt(defaultEvent.redeemedVaultCollateralWei),
-                                3,
-                                collateral?.decimals ?? 18
-                            );
-                            poolCollateralRedeemed = formatBigIntToDisplayDecimals(BigInt(defaultEvent.redeemedPoolCollateralWei), 3, 18);
-                            collateralToken = defaultEvent.collateralToken == "USDT" ? "USDT0" : defaultEvent.collateralToken;
+                            const vaultCollateralToken = poolsByVaultAddress.get(defaultEvent.agentVault)?.vaultCollateralToken;
+                            if (vaultCollateralToken) {
+                                const collateral = collateralsBySymbol.get(vaultCollateralToken);
+                                vaultCollateralRedeemed = formatBigIntToDisplayDecimals(
+                                    BigInt(defaultEvent.redeemedVaultCollateralWei),
+                                    3,
+                                    collateral?.decimals ?? 18
+                                );
+                                poolCollateralRedeemed = formatBigIntToDisplayDecimals(BigInt(defaultEvent.redeemedPoolCollateralWei), 3, 18);
+                                collateralToken = vaultCollateralToken == "USDT" ? "USDT0" : vaultCollateralToken;
+                            }
                         }
                     }
                     const progress: OFTHistory = {

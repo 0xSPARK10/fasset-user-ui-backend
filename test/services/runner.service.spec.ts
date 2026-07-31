@@ -5,8 +5,8 @@
  * for pending mintings and redemptions, checks their status against the
  * underlying chain, requests attestation proofs, and executes on-chain calls.
  *
- * We do NOT test the infinite startProcessing loop directly. Instead we test
- * the public helper methods that drive the business logic:
+ * The startProcessing cadence is covered with fake timers. The remaining tests
+ * exercise the public helper methods that drive the business logic:
  *   - redemptionStatus
  *   - findRedemptionPayment
  *   - redemptionTimeElapsed
@@ -74,6 +74,7 @@ import { FassetConfigService } from "../../src/services/fasset.config.service";
 import { RedeemData } from "../../src/interfaces/structure";
 import { RedemptionDefaultEvent as RedemptionDefaultEventEntity } from "../../src/entities/RedemptionDefaultEvent";
 import { RedemptionBlocked } from "../../src/entities/RedemptionBlockedEvent";
+import { logger } from "../../src/logger/winston.logger";
 
 /* -------------------------------------------------------------------------- */
 /*                             MOCK DEFINITIONS                                */
@@ -202,6 +203,86 @@ describe("RunnerService", () => {
 
     it("should be defined", () => {
         expect(service).toBeDefined();
+    });
+
+    describe("startProcessing", () => {
+        const flushMicrotasks = async () => {
+            for (let i = 0; i < 10; i++) {
+                await Promise.resolve();
+            }
+        };
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+        });
+
+        afterEach(() => {
+            jest.clearAllTimers();
+            jest.useRealTimers();
+            jest.restoreAllMocks();
+        });
+
+        it("should wait five seconds before starting the next successful cycle", async () => {
+            const neverResolve = () => new Promise<void>(() => undefined);
+            const processMintings = jest
+                .spyOn(service as any, "processMintings")
+                .mockResolvedValueOnce(undefined)
+                .mockImplementationOnce(neverResolve);
+            jest.spyOn(service as any, "processRedemptions").mockResolvedValue(undefined);
+            jest.spyOn(service as any, "processDirectMintings").mockResolvedValue(undefined);
+            jest.spyOn(service as any, "processRedemptionsWithTag").mockResolvedValue(undefined);
+            jest.spyOn(service as any, "withdrawWNAT").mockResolvedValue(undefined);
+
+            void service.startProcessing();
+            await flushMicrotasks();
+
+            expect(processMintings).toHaveBeenCalledTimes(1);
+            await jest.advanceTimersByTimeAsync(4999);
+            expect(processMintings).toHaveBeenCalledTimes(1);
+
+            await jest.advanceTimersByTimeAsync(1);
+            await flushMicrotasks();
+            expect(processMintings).toHaveBeenCalledTimes(2);
+        });
+
+        it("should wait five seconds before retrying after a cycle error", async () => {
+            const error = new Error("cycle failed");
+            const neverResolve = () => new Promise<void>(() => undefined);
+            const processMintings = jest
+                .spyOn(service as any, "processMintings")
+                .mockRejectedValueOnce(error)
+                .mockImplementationOnce(neverResolve);
+
+            void service.startProcessing();
+            await flushMicrotasks();
+
+            expect(logger.error).toHaveBeenCalledWith("Starting runner.service run into error", error);
+            expect(processMintings).toHaveBeenCalledTimes(1);
+            await jest.advanceTimersByTimeAsync(4999);
+            expect(processMintings).toHaveBeenCalledTimes(1);
+
+            await jest.advanceTimersByTimeAsync(1);
+            await flushMicrotasks();
+            expect(processMintings).toHaveBeenCalledTimes(2);
+        });
+
+        it("should throttle cycles when no FAssets are configured", async () => {
+            (service as any).fassetNames = [];
+            const timeoutSpy = jest.spyOn(global, "setTimeout");
+
+            void service.startProcessing();
+            await flushMicrotasks();
+
+            expect(timeoutSpy).toHaveBeenCalledTimes(1);
+            expect(timeoutSpy).toHaveBeenLastCalledWith(expect.any(Function), 5000);
+            await jest.advanceTimersByTimeAsync(4999);
+            expect(timeoutSpy).toHaveBeenCalledTimes(1);
+
+            await jest.advanceTimersByTimeAsync(1);
+            await flushMicrotasks();
+            expect(timeoutSpy).toHaveBeenCalledTimes(2);
+            expect(timeoutSpy).toHaveBeenLastCalledWith(expect.any(Function), 5000);
+        });
     });
 
     /* ------------------------------------------------------------------ */

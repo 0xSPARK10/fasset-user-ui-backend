@@ -1,6 +1,7 @@
 import { ProofOfReserve, SupplyTotalCollateral } from "src/interfaces/structure";
 
 export const EXECUTION_FEE = 2_500_000_000_000_000_000n; // 2.5 * 10^18
+export const DEFAULT_CUSTOM_EXECUTOR_FEE = "20000000000000000000"; // 20 * 10^18
 export const STATE_CONNECTOR_ADDRESS = "0x0c13aDA1C7143Cf0a0795FFaB93eEBb6FAD6e4e3";
 
 export const PROOF_OF_RESERVE: ProofOfReserve = { total: "0", totalUSD: "0", reserve: "0", reserveUSD: "0", ratio: "0" };

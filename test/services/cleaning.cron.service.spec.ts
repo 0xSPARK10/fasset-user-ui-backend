@@ -18,6 +18,12 @@ import { OFTReceived } from "../../src/entities/OFTReceived";
 import { OFTSent } from "../../src/entities/OFTSent";
 import { CollateralReservationEvent } from "../../src/entities/CollateralReservation";
 import { OFTRedemption } from "../../src/entities/OFTRedemption";
+import { RedemptionRequested } from "../../src/entities/RedemptionRequested";
+import { RedemptionDefaultEvent } from "../../src/entities/RedemptionDefaultEvent";
+import { MintingDefaultEvent } from "../../src/entities/MintingDefaultEvent";
+import { RedemptionBlocked } from "../../src/entities/RedemptionBlockedEvent";
+import { OFTRedemptionFailed } from "../../src/entities/OFTRedemptionFailed";
+import { OFTComposerFeeCollected } from "../../src/entities/OFTComposerFeeCollected";
 
 /* ---- mock logger to suppress output in tests ---- */
 jest.mock("src/logger/winston.logger", () => ({
@@ -55,10 +61,25 @@ describe("CleaningService", () => {
     });
 
     describe("deleteOldMintingsREdemptions", () => {
-        it("should call nativeDelete for all 10 entity types", async () => {
+        it("should call nativeDelete for all 24 entity types", async () => {
             await service.deleteOldMintingsREdemptions();
 
-            expect(mockEm.nativeDelete).toHaveBeenCalledTimes(10);
+            expect(mockEm.nativeDelete).toHaveBeenCalledTimes(24);
+        });
+
+        it.each([
+            ["RedemptionRequested", RedemptionRequested],
+            ["RedemptionDefaultEvent", RedemptionDefaultEvent],
+            ["MintingDefaultEvent", MintingDefaultEvent],
+            ["RedemptionBlocked", RedemptionBlocked],
+            ["OFTRedemptionFailed", OFTRedemptionFailed],
+            ["OFTComposerFeeCollected", OFTComposerFeeCollected],
+        ])("should delete old %s entities", async (_name, entity) => {
+            await service.deleteOldMintingsREdemptions();
+
+            const call = mockEm.nativeDelete.mock.calls.find((deleteCall) => deleteCall[0] === entity);
+            expect(call).toBeDefined();
+            expect(call[1]).toEqual({ timestamp: { $lt: expect.any(Number) } });
         });
 
         it("should delete Minting entities older than 7 days", async () => {

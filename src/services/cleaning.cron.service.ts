@@ -20,6 +20,12 @@ import { DirectMintingDelayedEvent } from "src/entities/DirectMintingDelayedEven
 import { LargeDirectMintingDelayedEvent } from "src/entities/LargeDirectMintingDelayedEvent";
 import { RedemptionWithTagRequestedEvent } from "src/entities/RedemptionWithTagRequestedEvent";
 import { RedemptionAmountIncompleteEvent } from "src/entities/RedemptionAmountIncompleteEvent";
+import { RedemptionRequested } from "src/entities/RedemptionRequested";
+import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
+import { MintingDefaultEvent } from "src/entities/MintingDefaultEvent";
+import { RedemptionBlocked } from "src/entities/RedemptionBlockedEvent";
+import { OFTRedemptionFailed } from "src/entities/OFTRedemptionFailed";
+import { OFTComposerFeeCollected } from "src/entities/OFTComposerFeeCollected";
 
 @Injectable()
 export class CleaningService {
@@ -44,6 +50,9 @@ export class CleaningService {
             await this.em.nativeDelete(Redemption, {
                 timestamp: { $lt: weekTimeStamp },
             });
+            await this.em.nativeDelete(RedemptionRequested, {
+                timestamp: { $lt: weekTimeStamp },
+            });
 
             // Get and remove full redemptions
             await this.em.nativeDelete(FullRedemption, {
@@ -52,6 +61,12 @@ export class CleaningService {
 
             // Get and remove redemption defaults
             await this.em.nativeDelete(RedemptionDefault, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(RedemptionDefaultEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(RedemptionBlocked, {
                 timestamp: { $lt: weekTimeStamp },
             });
 
@@ -79,8 +94,17 @@ export class CleaningService {
             await this.em.nativeDelete(CollateralReservationEvent, {
                 timestamp: { $lt: weekTimeStamp },
             });
+            await this.em.nativeDelete(MintingDefaultEvent, {
+                timestamp: { $lt: weekTimeStamp },
+            });
             // Get and remove incomplete redemptions
             await this.em.nativeDelete(OFTRedemption, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(OFTRedemptionFailed, {
+                timestamp: { $lt: weekTimeStamp },
+            });
+            await this.em.nativeDelete(OFTComposerFeeCollected, {
                 timestamp: { $lt: weekTimeStamp },
             });
 

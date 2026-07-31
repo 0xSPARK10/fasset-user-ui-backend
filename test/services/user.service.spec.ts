@@ -57,6 +57,7 @@ describe("UserService", () => {
     let mockFassetConfigService: any;
     let mockHttpService: any;
     let mockConfigService: any;
+    let mockConfigValues: Record<string, string>;
 
     /** Mock asset manager contract that covers most methods */
     const mockAssetManager = {
@@ -99,10 +100,18 @@ describe("UserService", () => {
         emergencyPaused: jest.fn().mockResolvedValue(false),
         assetPriceNatWei: jest.fn().mockResolvedValue([1000000n, 1000000n]),
         getFAssetsBackedByPool: jest.fn().mockResolvedValue(5000000n),
+        directMintingPaymentAddress: jest.fn().mockResolvedValue("rCoreVaultAddress"),
+        getDirectMintingFeeBIPS: jest.fn().mockResolvedValue(500n),
+        getDirectMintingMinimumFeeUBA: jest.fn().mockResolvedValue(1000000n),
+        getDirectMintingExecutorFeeUBA: jest.fn().mockResolvedValue(500000n),
         interface: {
             decodeEventLog: jest.fn(),
             parseLog: jest.fn(),
         },
+    };
+
+    const mockMasterAccountController = {
+        getExecutorInfo: jest.fn().mockResolvedValue(["0xControllerExecutor", 750000000000000000n]),
     };
 
     /** Mock price reader contract */
@@ -202,6 +211,7 @@ describe("UserService", () => {
             }),
             getCollateralPoolContract: jest.fn(),
             getCollateralPoolTokenContract: jest.fn(),
+            getMasterAccountControllerContract: jest.fn().mockReturnValue(mockMasterAccountController),
         };
 
         mockEthersService = {
@@ -232,13 +242,14 @@ describe("UserService", () => {
             get: jest.fn(),
         };
 
+        mockConfigValues = {
+            APP_TYPE: "dev",
+            COSTON_EXPLORER_URL: "https://explorer.example.com",
+            NATIVE_TOKEN_SYMBOL: "C2FLR",
+            NETWORK: "coston2",
+        };
         mockConfigService = {
-            get: jest.fn().mockImplementation((key: string, defaultValue?: string) => {
-                if (key === "APP_TYPE") return "dev";
-                if (key === "COSTON_EXPLORER_URL") return "https://explorer.example.com";
-                if (key === "NATIVE_TOKEN_SYMBOL") return defaultValue || "C2FLR";
-                return defaultValue ?? undefined;
-            }),
+            get: jest.fn().mockImplementation((key: string, defaultValue?: string) => mockConfigValues[key] ?? defaultValue),
         };
 
         const module: TestingModule = await Test.createTestingModule({
@@ -315,18 +326,127 @@ describe("UserService", () => {
     });
 
     describe("getExecutorAddress", () => {
-        it("should return executor address, fee, and redemption fee", async () => {
+        it("should return the existing executor address and fee without a custom executor", async () => {
             const result = await service.getExecutorAddress("FTestXRP");
 
-            expect(result.executorAddress).toBe("0xExecutorAddr");
-            expect(result.executorFee).toBeDefined();
-            expect(result.redemptionFee).toBe("200");
+            expect(result).toEqual({
+                executorAddress: "0xExecutorAddr",
+                executorFee: "2500000000000000000",
+                redemptionFee: "200",
+            });
         });
 
         it("should call ethersService.getExecutorAddress", async () => {
             await service.getExecutorAddress("FTestXRP");
 
             expect(mockEthersService.getExecutorAddress).toHaveBeenCalled();
+        });
+
+        it("should return the configured custom executor and fee", async () => {
+            mockConfigValues.CUSTOM_EXECUTOR = "0xCustomExecutor";
+            mockConfigValues.CUSTOM_EXECUTOR_FEE = "123456789";
+
+            const result = await service.getExecutorAddress("FTestXRP");
+
+            expect(result).toEqual({
+                executorAddress: "0xCustomExecutor",
+                executorFee: "123456789",
+                redemptionFee: "200",
+            });
+            expect(mockEthersService.getExecutorAddress).not.toHaveBeenCalled();
+        });
+
+        it("should default the custom executor fee to 20 NAT in wei", async () => {
+            mockConfigValues.CUSTOM_EXECUTOR = "0xCustomExecutor";
+
+            const result = await service.getExecutorAddress("FTestXRP");
+
+            expect(result.executorFee).toBe("20000000000000000000");
+        });
+
+        it("should preserve a configured zero fee", async () => {
+            mockConfigValues.CUSTOM_EXECUTOR = "0xCustomExecutor";
+            mockConfigValues.CUSTOM_EXECUTOR_FEE = "0";
+
+            const result = await service.getExecutorAddress("FTestXRP");
+
+            expect(result.executorFee).toBe("0");
+        });
+
+        it("should ignore the custom fee when no custom executor is configured", async () => {
+            mockConfigValues.CUSTOM_EXECUTOR_FEE = "123456789";
+
+            const result = await service.getExecutorAddress("FTestXRP");
+
+            expect(result.executorAddress).toBe("0xExecutorAddr");
+            expect(result.executorFee).toBe("2500000000000000000");
+        });
+
+        it("should give the songbird executor priority over custom configuration", async () => {
+            mockConfigValues.NETWORK = "songbird";
+            mockConfigValues.CUSTOM_EXECUTOR = "0xCustomExecutor";
+            mockConfigValues.CUSTOM_EXECUTOR_FEE = "123456789";
+
+            const result = await service.getExecutorAddress("FTestXRP");
+
+            expect(result).toEqual({
+                executorAddress: "0x02954e158Be2b477E1C26F31e8AA0c21b378445C",
+                executorFee: "2500000000000000000",
+                redemptionFee: "200",
+            });
+            expect(mockEthersService.getExecutorAddress).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("direct minting executor info", () => {
+        it("should return the controller executor and fee without a custom executor", async () => {
+            const result = await service.getDirectMintingExecutor("FTestXRP");
+
+            expect(result).toEqual({
+                executorAddress: "0xControllerExecutor",
+                executorFee: "750000000000000000",
+            });
+        });
+
+        it("should override only the direct minting executor address", async () => {
+            mockConfigValues.CUSTOM_EXECUTOR = "0xCustomExecutor";
+            mockConfigValues.CUSTOM_EXECUTOR_FEE = "123456789";
+
+            const result = await service.getDirectMintingExecutor("FTestXRP");
+
+            expect(result).toEqual({
+                executorAddress: "0xCustomExecutor",
+                executorFee: "750000000000000000",
+            });
+        });
+
+        it("should give the songbird executor priority without calling the controller", async () => {
+            mockConfigValues.NETWORK = "songbird";
+            mockConfigValues.CUSTOM_EXECUTOR = "0xCustomExecutor";
+
+            const result = await service.getDirectMintingExecutor("FTestXRP");
+
+            expect(result).toEqual({
+                executorAddress: "0x02954e158Be2b477E1C26F31e8AA0c21b378445C",
+                executorFee: "2500000000000000000",
+            });
+            expect(mockContractService.getMasterAccountControllerContract).not.toHaveBeenCalled();
+        });
+
+        it("should return the custom address and controller fee in direct minting info", async () => {
+            mockConfigValues.CUSTOM_EXECUTOR = "0xCustomExecutor";
+            mockConfigValues.CUSTOM_EXECUTOR_FEE = "123456789";
+
+            const result = await service.getDirectMintingInfo("FTestXRP");
+
+            expect(result).toEqual({
+                paymentAddress: "rCoreVaultAddress",
+                mintingFeeBIPS: "500",
+                minimumMintingFeeUBA: "1000000",
+                executorAddress: "0xCustomExecutor",
+                executorFee: "750000000000000000",
+                fassetsExecutorFee: "500000",
+            });
         });
     });
 
@@ -587,6 +707,18 @@ describe("UserService", () => {
             const result = await service.getAssetPrice("FTestXRP");
 
             expect(result).toEqual({ price: 2.5 });
+            expect(mockCacheManager.get).toHaveBeenCalledWith("FTestXRP-price");
+            expect(mockPriceReader.getPrice).not.toHaveBeenCalled();
+            expect(mockCacheManager.set).not.toHaveBeenCalled();
+        });
+
+        it("should return a cached zero without recalculating", async () => {
+            mockCacheManager.get.mockResolvedValue(0);
+
+            const result = await service.getAssetPrice("FTestXRP");
+
+            expect(result).toEqual({ price: 0 });
+            expect(mockPriceReader.getPrice).not.toHaveBeenCalled();
         });
 
         it("should calculate price from priceReader when not cached", async () => {
@@ -595,6 +727,7 @@ describe("UserService", () => {
 
             const result = await service.getAssetPrice("FTestXRP");
 
+            expect(mockCacheManager.get).toHaveBeenCalledWith("FTestXRP-price");
             expect(result.price).toBeDefined();
             expect(typeof result.price).toBe("number");
         });
@@ -605,11 +738,7 @@ describe("UserService", () => {
 
             await service.getAssetPrice("FTestXRP");
 
-            expect(mockCacheManager.set).toHaveBeenCalledWith(
-                "FTestXRP-price",
-                expect.any(Number),
-                5000
-            );
+            expect(mockCacheManager.set).toHaveBeenCalledWith("FTestXRP-price", expect.any(Number), 5000);
         });
     });
 

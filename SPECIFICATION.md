@@ -93,6 +93,8 @@ src/
 | `NATIVE_RPC` | Optional RPC API key (sent as header) | |
 | `NATIVE_PRIV_KEY` | Executor wallet private key | |
 | `NATIVE_PUB_ADDR` | Executor wallet public address | |
+| `CUSTOM_EXECUTOR` | Optional user-facing executor address override; ignored on Songbird | `0x...` |
+| `CUSTOM_EXECUTOR_FEE` | Optional `/api/executor` fee in raw wei when `CUSTOM_EXECUTOR` is set; defaults to 20 NAT | `20000000000000000000` |
 | `APP_TYPE` | Application mode | `dev` or `production` |
 | `ROOT_PATH` | Global API prefix path | `/v1/` |
 | `BTC_INDEXER` | Blockbook BTC indexer URL | |
