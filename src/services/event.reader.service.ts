@@ -349,8 +349,8 @@ export class EventReaderService implements OnApplicationBootstrap {
                             if (count === 0) {
                                 const entity = new DirectMintingPaymentTooSmallForFeeEvent(
                                     transactionId,
-                                    (event.args.receivedAmount as bigint).toString(),
-                                    (event.args.mintingFeeUBA as bigint).toString(),
+                                    (event.args.receivedAmountUBA as bigint).toString(),
+                                    (event.args.minimumMintingFeeUBA as bigint).toString(),
                                     timestamp,
                                     txHash,
                                     am.fasset
