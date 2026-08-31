@@ -224,7 +224,7 @@ Returns the asset manager contract address for a FAsset.
 
 #### `GET /api/executor/:fasset`
 
-Returns executor address, executor fee (in wei), and redemption fee (in BIPS).
+Returns executor address, executor fee (in wei), and the combined configured system and regular redemption fee (in BIPS).
 
 **Path Parameters:**
 | Param | Type | Description |
@@ -787,7 +787,7 @@ Returns which FAssets currently have minting enabled.
 
 #### `GET /api/redemptionFee/:fasset`
 
-Returns the redemption fee in BIPS, max redemption lots, and max lots per single redemption.
+Returns the combined configured system and regular redemption fee in BIPS, max redemption lots, and max lots per single redemption.
 
 **Path Parameters:**
 | Param | Type | Description |
@@ -803,7 +803,12 @@ Returns the redemption fee in BIPS, max redemption lots, and max lots per single
 }
 ```
 
-> Note: To get fee percentage, divide BIPS by 100 (e.g. 10 BIPS = 0.1%).
+> Note: The system fee is charged first, so the nominal combined rate is
+> `systemFeeBIPS + regularFeeBIPS - systemFeeBIPS * regularFeeBIPS / 10,000`,
+> rounded to the nearest whole BIP. To get fee percentage, divide BIPS by 100
+> (e.g. 10 BIPS = 0.1%). Exact realized fees are taken from redemption events.
+> The configured system rate is read directly from `systemRedemptionFeeBIPS()`;
+> deployments without that getter are treated as having a zero system fee.
 
 ---
 
@@ -892,7 +897,7 @@ Triggers handling of a redemption default. Called after user confirms the defaul
 
 #### `GET /api/redemptionFeeData`
 
-Returns redemption fee data for all FAssets.
+Returns the combined configured system and regular redemption fee percentage and estimated per-lot USD fee for all FAssets.
 
 **Response:** `RedemptionFeeData[]`
 ```json
@@ -1479,7 +1484,14 @@ Stores CollateralReserved events from the blockchain.
 | `txhash` | text? | Transaction hash |
 
 #### `redemption_requested`
-Stores RedemptionRequested events.
+Stores RedemptionRequested events, including the exact `systemRedemptionFeeUBA`
+from the matching `SystemRedemptionFeePaid` event. `valueUBA` is already reduced
+by the system fee, so gross history amount is `valueUBA + systemRedemptionFeeUBA`
+and the underlying obligation remains `valueUBA - feeUBA`.
+
+#### `redemption_with_tag_requested_event`
+Stores tagged redemption requests with the same exact
+`systemRedemptionFeeUBA` gross/net semantics as `redemption_requested`.
 
 #### `redemption_event_default`
 Stores RedemptionDefault events.
@@ -1550,6 +1562,7 @@ Stores OFT redemption data from FAssetRedeemed events, enriched with RedemptionR
 | `paymentAddress` | string | Underlying payment address |
 | `valueUBA` | string | Value in UBA |
 | `feeUBA` | string | Fee in UBA |
+| `systemRedemptionFeeUBA` | string | Exact system redemption fee in UBA (default: `"0"`) |
 | `paymentReference` | string | Payment reference |
 | `timestamp` | bigint | Creation timestamp |
 | `txhash` | string | FLR transaction hash |
@@ -1602,12 +1615,13 @@ Continuously reads blockchain logs from the last processed block. Tracks these e
 | `AgentPingResponse` | Agent liveness heartbeat (2-hour window) |
 | `CollateralReserved` | New collateral reservation for minting |
 | `RedemptionRequested` | New redemption request |
+| `SystemRedemptionFeePaid` | Exact system fee for a redemption request |
 | `RedemptionDefault` | Redemption default event |
 | `RedemptionRequestIncomplete` | Partial redemption |
 | `MintingPaymentDefault` | Failed minting payment |
 | `RedemptionPaymentBlocked` | Blocked redemption payment |
 
-Saves events to corresponding database entities and updates minting/redemption records.
+Saves events to corresponding database entities and updates minting/redemption records. System fee events are correlated with requests by AssetManager, transaction hash, and request ID, with agent-vault validation. Existing reader checkpoints are not rewound, so only newly indexed events receive the exact fee; older rows retain the default zero value.
 
 ### Runner (RunnerService)
 
@@ -1626,7 +1640,7 @@ Cron job running at midnight that deletes:
 
 ### OFT Event Reader (OFTEventReaderService)
 
-Reads OFTSent, OFTReceived, FAssetRedeemed, RedemptionRequested, and ComposeDelivered events from the FAsset OFT and FAssetRedeemComposer contracts. Creates `OFTRedemption` entities from FAssetRedeemed+RedemptionRequested event pairs. Only active on Flare and Coston2 networks.
+Reads OFTSent, OFTReceived, FAssetRedeemed, RedemptionRequested, SystemRedemptionFeePaid, and ComposeDelivered events from the FAsset OFT, AssetManager, and FAssetRedeemComposer contracts. Creates `OFTRedemption` entities from matched redemption events and stores the exact system fee when emitted. Only active on Flare and Coston2 networks.
 
 ### OFT Redemption Processor (OFTRedemptionProcessor)
 

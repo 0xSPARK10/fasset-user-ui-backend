@@ -1,4 +1,4 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "minting_payment_default" })
 export class MintingDefaultEvent {
@@ -11,6 +11,7 @@ export class MintingDefaultEvent {
     @Property()
     minter: string;
 
+    @Index()
     @Property()
     collateralReservationId: string;
 

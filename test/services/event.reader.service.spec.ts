@@ -146,15 +146,13 @@ describe("EventReaderService", () => {
      * ------------------------------------------------------------------ */
 
     describe("constructor", () => {
-        it("should initialise eventTopics with 7 topic hashes", () => {
+        it("should initialise eventTopics with every configured topic hash", () => {
             /**
              * The constructor calls ethers.id() once per event signature.
-             * There are 7 event signatures:
-             *   AgentPingResponse, CollateralReserved, RedemptionRequested,
-             *   RedemptionDefault, RedemptionRequestIncomplete,
-             *   MintingPaymentDefault, RedemptionPaymentBlocked
+             * The base mint/redemption topics, direct-mint topics, tagged
+             * redemption topics, and system-fee topic must all be present.
              */
-            expect(service.eventTopics).toHaveLength(7);
+            expect(service.eventTopics).toHaveLength(15);
         });
 
         it("should populate every eventTopic entry from ethers.id()", () => {
@@ -177,6 +175,59 @@ describe("EventReaderService", () => {
             const iface = (service as any).iface;
             expect(iface).toBeDefined();
             expect(typeof iface.parseLog).toBe("function");
+        });
+    });
+
+    describe("system redemption fee correlation", () => {
+        const requestEvent = {
+            address: "0xAssetManagerAddr",
+            transactionHash: "0xTxHash",
+            blockNumber: 100,
+            parsed: {
+                name: "RedemptionRequested",
+                args: { agentVault: "0xAgentVault", requestId: 42n },
+            },
+        };
+
+        it("finds a matching fee even when it follows the request event", () => {
+            const feeEvent = {
+                address: "0xAssetManagerAddr",
+                transactionHash: "0xTxHash",
+                blockNumber: 100,
+                parsed: {
+                    name: "SystemRedemptionFeePaid",
+                    args: { agentVault: "0xAgentVault", requestId: 42n, feeUBA: 25n },
+                },
+            };
+
+            const fees = (service as any).collectSystemRedemptionFees([requestEvent, feeEvent]);
+            const result = (service as any).getSystemRedemptionFeeUBA(fees, requestEvent, "42", "0xAgentVault");
+
+            expect(result).toBe("25");
+        });
+
+        it("defaults to zero when the agent vault does not match", () => {
+            const feeEvent = {
+                address: "0xAssetManagerAddr",
+                transactionHash: "0xTxHash",
+                blockNumber: 100,
+                parsed: {
+                    name: "SystemRedemptionFeePaid",
+                    args: { agentVault: "0xDifferentVault", requestId: 42n, feeUBA: 25n },
+                },
+            };
+
+            const fees = (service as any).collectSystemRedemptionFees([feeEvent, requestEvent]);
+            const result = (service as any).getSystemRedemptionFeeUBA(fees, requestEvent, "42", "0xAgentVault");
+
+            expect(result).toBe("0");
+        });
+
+        it("defaults to zero when no fee event was emitted", () => {
+            const fees = (service as any).collectSystemRedemptionFees([requestEvent]);
+            const result = (service as any).getSystemRedemptionFeeUBA(fees, requestEvent, "42", "0xAgentVault");
+
+            expect(result).toBe("0");
         });
     });
 

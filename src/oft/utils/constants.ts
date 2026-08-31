@@ -19,6 +19,9 @@ export interface OFTLogs {
     // AssetManager `RedemptionWithTagRequested` events — carry the 13th `destinationTag` arg
     // emitted when a redeemer requested a tag on the source chain.
     redemptionWithTagRequested: ethers.Log[];
+    // AssetManager system fee events linked to redemption requests by transaction,
+    // request ID, and agent vault.
+    systemRedemptionFeePaid: ethers.Log[];
     // Composer fee events from the FAssetRedeemComposer contract. Only emitted when the
     // composer fee is > 0, so a given redemption may have no corresponding event here.
     composerFeeCollected: ethers.Log[];
@@ -56,6 +59,10 @@ export const AM_REDEMPTION_REQUESTED_EVENT = new Interface([
 // followed by a trailing `uint256 destinationTag` (args index 12).
 export const AM_REDEMPTION_WITH_TAG_REQUESTED_EVENT = new Interface([
     "event RedemptionWithTagRequested(address indexed,address indexed,uint256 indexed,string,uint256,uint256,uint256,uint256,uint256,bytes32,address,uint256,uint256)",
+]);
+
+export const AM_SYSTEM_REDEMPTION_FEE_PAID_EVENT = new Interface([
+    "event SystemRedemptionFeePaid(address indexed agentVault,uint256 indexed requestId,uint256 feeUBA)",
 ]);
 
 export const OFTAdapterEvents = new Interface([

@@ -1,10 +1,11 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "underlying_payment" })
 export class UnderlyingPayment {
     @PrimaryKey({ autoincrement: true })
     id!: number;
 
+    @Index()
     @Property()
     paymentReference: string;
 

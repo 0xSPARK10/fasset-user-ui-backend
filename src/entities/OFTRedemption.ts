@@ -1,6 +1,7 @@
 import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "oft_redemption" })
+@Index({ properties: ["processed", "id"] })
 export class OFTRedemption {
     @PrimaryKey({ autoincrement: true })
     id!: number;
@@ -23,6 +24,9 @@ export class OFTRedemption {
 
     @Property()
     feeUBA: string;
+
+    @Property({ default: "0" })
+    systemRedemptionFeeUBA: string;
 
     @Property()
     paymentReference: string;
@@ -77,7 +81,8 @@ export class OFTRedemption {
         guid: string,
         personalRedeemerAddress: string,
         srcEid: number,
-        destinationTag?: string | null
+        destinationTag?: string | null,
+        systemRedemptionFeeUBA: string = "0"
     ) {
         this.agentVault = agentVault;
         this.redeemer = redeemer;
@@ -85,6 +90,7 @@ export class OFTRedemption {
         this.paymentAddress = paymentAddress;
         this.valueUBA = valueUBA;
         this.feeUBA = feeUBA;
+        this.systemRedemptionFeeUBA = systemRedemptionFeeUBA;
         this.paymentReference = paymentReference;
         this.timestamp = timestamp;
         this.txhash = txhash;

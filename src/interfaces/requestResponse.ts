@@ -97,9 +97,9 @@ export class MintingStatus {
 export class RedemptionFeeData {
     @ApiProperty({ example: "FXRP" })
     fasset: string;
-    @ApiProperty({ example: "0.5" })
+    @ApiProperty({ example: "0.5", description: "Combined configured system and regular redemption fee percentage" })
     feePercentage: string;
-    @ApiProperty({ example: "20" })
+    @ApiProperty({ example: "20", description: "Estimated combined redemption fee in USD for one lot" })
     feeUSD: string;
 }
 
@@ -128,7 +128,7 @@ export class MintingCapInfo {
 }
 
 export class RedemptionFee {
-    @ApiProperty({ example: "10" })
+    @ApiProperty({ example: "10", description: "Combined configured system and regular redemption fee in BIPS, rounded to the nearest BIP" })
     redemptionFee: string;
     @ApiProperty({ example: 123 })
     maxRedemptionLots: number;
@@ -139,7 +139,7 @@ export class RedemptionFee {
 }
 
 export class ProtocolFees {
-    @ApiProperty({ example: "10" })
+    @ApiProperty({ example: "10", description: "Combined configured system and regular redemption fee in BIPS, rounded to the nearest BIP" })
     redemptionFee: string;
 }
 
@@ -437,7 +437,7 @@ export class ExecutorResponse {
     executorAddress: string;
     @ApiProperty({ example: "100000000000000000" })
     executorFee: string;
-    @ApiProperty({ example: "10" })
+    @ApiProperty({ example: "10", description: "Combined configured system and regular redemption fee in BIPS, rounded to the nearest BIP" })
     redemptionFee: string;
 }
 

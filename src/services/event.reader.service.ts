@@ -34,6 +34,17 @@ interface AssetManagerEntry {
     decimals: number;
 }
 
+interface DecodedAssetManagerEvent {
+    address: string;
+    transactionHash: string;
+    parsed: LogDescription;
+}
+
+interface SystemRedemptionFee {
+    agentVault: string;
+    feeUBA: string;
+}
+
 @Injectable()
 export class EventReaderService implements OnApplicationBootstrap {
     eventTopics: string[] = [];
@@ -54,6 +65,7 @@ export class EventReaderService implements OnApplicationBootstrap {
             ethers.id("AgentPingResponse(address,address,uint256,string)"),
             ethers.id("CollateralReserved(address,address,uint256,uint256,uint256,uint256,uint256,uint256,string,bytes32,address,uint256)"),
             ethers.id("RedemptionRequested(address,address,uint256,string,uint256,uint256,uint256,uint256,uint256,bytes32,address,uint256)"),
+            ethers.id("SystemRedemptionFeePaid(address,uint256,uint256)"),
             ethers.id("RedemptionDefault(address,address,uint256,uint256,uint256,uint256)"),
             ethers.id("RedemptionRequestIncomplete(address,uint256)"),
             ethers.id("MintingPaymentDefault(address,address,uint256,uint256)"),
@@ -71,6 +83,35 @@ export class EventReaderService implements OnApplicationBootstrap {
 
         // Reuse one shared Interface instance for decoding all AssetManager events
         this.iface = IIAssetManager__factory.createInterface();
+    }
+
+    private systemRedemptionFeeKey(address: string, transactionHash: string, requestId: string): string {
+        return `${address.toLowerCase()}:${transactionHash.toLowerCase()}:${requestId}`;
+    }
+
+    private collectSystemRedemptionFees(decodedEvents: DecodedAssetManagerEvent[]): Map<string, SystemRedemptionFee> {
+        const fees = new Map<string, SystemRedemptionFee>();
+        for (const decoded of decodedEvents) {
+            const event = decoded.parsed;
+            if (event.name !== "SystemRedemptionFeePaid") continue;
+
+            const requestId = (event.args.requestId as bigint).toString();
+            fees.set(this.systemRedemptionFeeKey(decoded.address, decoded.transactionHash, requestId), {
+                agentVault: event.args.agentVault as string,
+                feeUBA: (event.args.feeUBA as bigint).toString(),
+            });
+        }
+        return fees;
+    }
+
+    private getSystemRedemptionFeeUBA(
+        fees: Map<string, SystemRedemptionFee>,
+        decoded: DecodedAssetManagerEvent,
+        requestId: string,
+        agentVault: string
+    ): string {
+        const fee = fees.get(this.systemRedemptionFeeKey(decoded.address, decoded.transactionHash, requestId));
+        return fee?.agentVault.toLowerCase() === agentVault.toLowerCase() ? fee.feeUBA : "0";
     }
 
     async onApplicationBootstrap() {
@@ -138,6 +179,7 @@ export class EventReaderService implements OnApplicationBootstrap {
                 for (let lastBlockRead = lastEventBlock; lastBlockRead <= lastBlock; lastBlockRead += blockReadOffset) {
                     const toBlock = Math.min(lastBlockRead + blockReadOffset - 1, lastBlock);
                     const decodedEvents = await this.readEventsFrom(lastBlockRead, toBlock);
+                    const systemRedemptionFees = this.collectSystemRedemptionFees(decodedEvents);
 
                     for (const decoded of decodedEvents) {
                         const am = this.assetManagerMap.get(decoded.address.toLowerCase());
@@ -238,7 +280,8 @@ export class EventReaderService implements OnApplicationBootstrap {
                                 event.args.paymentReference as string,
                                 timestamp,
                                 txHash,
-                                am.fasset
+                                am.fasset,
+                                this.getSystemRedemptionFeeUBA(systemRedemptionFees, decoded, requestId, event.args.agentVault as string)
                             );
                             await this.em.persistAndFlush(redemptionRequestedEvent);
                             const red = await this.em.count(Redemption, {
@@ -403,7 +446,8 @@ export class EventReaderService implements OnApplicationBootstrap {
                                     (event.args.destinationTag as bigint).toString(),
                                     timestamp,
                                     txHash,
-                                    am.fasset
+                                    am.fasset,
+                                    this.getSystemRedemptionFeeUBA(systemRedemptionFees, decoded, requestId, event.args.agentVault as string)
                                 );
                                 await this.em.persistAndFlush(entity);
                             }
@@ -437,7 +481,7 @@ export class EventReaderService implements OnApplicationBootstrap {
     }
 
     /** Fetch logs from all asset managers and decode them via IIAssetManager interface. */
-    async readEventsFrom(fromBlock: number, toBlock: number): Promise<Array<{ address: string; transactionHash: string; parsed: LogDescription }>> {
+    async readEventsFrom(fromBlock: number, toBlock: number): Promise<DecodedAssetManagerEvent[]> {
         const logs = await this.ethersService.getProvider().getLogs({
             address: this.assetManagerAddresses,
             fromBlock,
@@ -445,7 +489,7 @@ export class EventReaderService implements OnApplicationBootstrap {
             topics: [this.eventTopics],
         });
 
-        const results: Array<{ address: string; transactionHash: string; parsed: LogDescription }> = [];
+        const results: DecodedAssetManagerEvent[] = [];
         for (const log of logs) {
             try {
                 const parsed = this.iface.parseLog({ topics: log.topics as string[], data: log.data });

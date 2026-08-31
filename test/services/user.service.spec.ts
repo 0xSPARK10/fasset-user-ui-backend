@@ -44,6 +44,7 @@ import { EthersService } from "../../src/services/ethers.service";
 import { FassetConfigService } from "../../src/services/fasset.config.service";
 import { Minting } from "../../src/entities/Minting";
 import { CollateralReservationEvent } from "../../src/entities/CollateralReservation";
+import { RedemptionRequested } from "../../src/entities/RedemptionRequested";
 
 describe("UserService", () => {
     let service: UserService;
@@ -62,6 +63,8 @@ describe("UserService", () => {
     /** Mock asset manager contract that covers most methods */
     const mockAssetManager = {
         collateralReservationFee: jest.fn().mockResolvedValue(1000000n),
+        systemRedemptionFeeBIPS: jest.fn().mockResolvedValue(0n),
+        minimumRedeemAmountUBA: jest.fn().mockResolvedValue(1000n),
         getSettings: jest.fn().mockResolvedValue({
             lotSizeAMG: 100n,
             assetMintingGranularityUBA: 1000n,
@@ -325,6 +328,95 @@ describe("UserService", () => {
         });
     });
 
+    describe("getRedemptionFee", () => {
+        it("should return the sequentially combined system and regular fee", async () => {
+            mockAssetManager.systemRedemptionFeeBIPS.mockResolvedValueOnce(100n);
+
+            const result = await service.getRedemptionFee("FTestBTC");
+
+            // 1% system fee followed by 2% regular fee is 2.98% in total.
+            expect(result).toEqual({
+                redemptionFee: "298",
+                maxLotsOneRedemption: -1,
+                maxRedemptionLots: -1,
+                minimumRedeemAmountUBA: "1000",
+            });
+        });
+
+        it("should round a fractional combined rate to the nearest whole BIP", async () => {
+            mockAssetManager.getSettings.mockResolvedValueOnce({
+                ...(await mockAssetManager.getSettings()),
+                redemptionFeeBIPS: 250n,
+            });
+            mockAssetManager.systemRedemptionFeeBIPS.mockResolvedValueOnce(125n);
+
+            const result = await service.getRedemptionFee("FTestBTC");
+
+            // 125 + 250 - (125 * 250 / 10_000) = 371.875 BIPS.
+            expect(result.redemptionFee).toBe("372");
+        });
+
+        it("should use zero when the AssetManager does not expose the system fee getter", async () => {
+            mockAssetManager.systemRedemptionFeeBIPS.mockRejectedValueOnce({
+                code: "CALL_EXCEPTION",
+                data: "0x5416eb98f345523800000000000000000000000000000000000000000000000000000000",
+            });
+
+            const result = await service.getRedemptionFee("FTestBTC");
+
+            expect(result.redemptionFee).toBe("200");
+        });
+
+        it("should propagate errors unrelated to a missing system fee getter", async () => {
+            mockAssetManager.systemRedemptionFeeBIPS.mockRejectedValueOnce(new Error("RPC unavailable"));
+
+            await expect(service.getRedemptionFee("FTestBTC")).rejects.toThrow("RPC unavailable");
+        });
+
+        it("should propagate FunctionNotFound errors for other selectors", async () => {
+            const unrelatedError = {
+                code: "CALL_EXCEPTION",
+                data: "0x5416eb98deadbeef00000000000000000000000000000000000000000000000000000000",
+            };
+            mockAssetManager.systemRedemptionFeeBIPS.mockRejectedValueOnce(unrelatedError);
+
+            await expect(service.getRedemptionFee("FTestBTC")).rejects.toBe(unrelatedError);
+        });
+    });
+
+    describe("getRedemptionRequestedEvents", () => {
+        it("should include the stored system fee in the gross amount without changing the underlying amount", async () => {
+            mockEm.find.mockImplementation((entity: any) => {
+                if (entity === RedemptionRequested) {
+                    return [
+                        {
+                            agentVault: "0xAgentVault",
+                            redeemer: "0xUser",
+                            requestId: "42",
+                            paymentAddress: "rPayment",
+                            valueUBA: "1000000",
+                            feeUBA: "10000",
+                            systemRedemptionFeeUBA: "100000",
+                            firstUnderlyingBlock: "100",
+                            lastUnderlyingBlock: "200",
+                            lastUnderlyingTimestamp: "300",
+                            paymentReference: "0xReference",
+                            timestamp: Date.now(),
+                            txhash: "0xRedeemHash",
+                            fasset: "FTestXRP",
+                        },
+                    ];
+                }
+                return [];
+            });
+
+            const result = await service.getRedemptionRequestedEvents("FTestXRP", "0xRedeemHash");
+
+            expect(result.fullAmount).toBe("1.1");
+            expect(result.redeemData[0].amountUBA).toBe("990000");
+        });
+    });
+
     describe("getExecutorAddress", () => {
         it("should return the existing executor address and fee without a custom executor", async () => {
             const result = await service.getExecutorAddress("FTestXRP");
@@ -340,6 +432,14 @@ describe("UserService", () => {
             await service.getExecutorAddress("FTestXRP");
 
             expect(mockEthersService.getExecutorAddress).toHaveBeenCalled();
+        });
+
+        it("should include the configured system redemption fee", async () => {
+            mockAssetManager.systemRedemptionFeeBIPS.mockResolvedValueOnce(100n);
+
+            const result = await service.getExecutorAddress("FTestXRP");
+
+            expect(result.redemptionFee).toBe("298");
         });
 
         it("should return the configured custom executor and fee", async () => {
@@ -758,6 +858,14 @@ describe("UserService", () => {
             // redemptionFeeBIPS = 200, so percentage = 200/100 = 2.0%
             expect(result[0].feePercentage).toBe("2");
         });
+
+        it("should include the configured system redemption fee", async () => {
+            mockAssetManager.systemRedemptionFeeBIPS.mockResolvedValueOnce(100n);
+
+            const result = await service.getRedemptionFeeData();
+
+            expect(result[0].feePercentage).toBe("2.98");
+        });
     });
 
     describe("checkStateFassets", () => {
@@ -776,6 +884,27 @@ describe("UserService", () => {
             const result = await service.getProtocolFees("FTestXRP");
 
             expect(result).toEqual({ redemptionFee: "200" });
+        });
+
+        it("should return the combined system and regular redemption fee", async () => {
+            mockAssetManager.systemRedemptionFeeBIPS.mockResolvedValueOnce(100n);
+
+            const result = await service.getProtocolFees("FTestXRP");
+
+            expect(result).toEqual({ redemptionFee: "298" });
+        });
+    });
+
+    describe("getNativeBalances", () => {
+        it("should use the combined fee for each FAsset valuation", async () => {
+            mockBotService.getCollateralList.mockReturnValueOnce([]);
+            mockAssetManager.systemRedemptionFeeBIPS.mockResolvedValueOnce(100n);
+
+            const result = await service.getNativeBalances("0xUser");
+            const fassetBalance = result.find((balance) => balance.symbol === "FXRP");
+
+            // 1,000,000 UBA less the 298 BIPS combined fee is valued at $2.425.
+            expect(fassetBalance?.valueUSD).toBe("2.425");
         });
     });
 

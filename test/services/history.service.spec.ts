@@ -45,6 +45,12 @@ jest.mock("src/utils/utils", () => ({
 import { HistoryService } from "../../src/services/userHistory.service";
 import { BotService } from "../../src/services/bot.init.service";
 import { UserService } from "../../src/services/user.service";
+import { Minting } from "../../src/entities/Minting";
+import { IncompleteRedemption } from "../../src/entities/RedemptionIncomplete";
+import { RedemptionRequested } from "../../src/entities/RedemptionRequested";
+import { Redemption } from "../../src/entities/Redemption";
+import { RedemptionWithTagRequestedEvent } from "../../src/entities/RedemptionWithTagRequestedEvent";
+import { RedemptionAmountIncompleteEvent } from "../../src/entities/RedemptionAmountIncompleteEvent";
 
 describe("HistoryService", () => {
     let service: HistoryService;
@@ -83,6 +89,7 @@ describe("HistoryService", () => {
         paymentAddress: "rPayAddr",
         valueUBA: "1000000",
         feeUBA: "10000",
+        systemRedemptionFeeUBA: "0",
         firstUnderlyingBlock: "100",
         lastUnderlyingBlock: "200",
         lastUnderlyingTimestamp: (now / 1000).toString(),
@@ -191,6 +198,45 @@ describe("HistoryService", () => {
 
             const redeemEntries = result.filter((p) => p.action === "REDEEM");
             expect(redeemEntries.length).toBeGreaterThanOrEqual(0);
+        });
+
+        it("should include the system fee in standard redemption gross amount only", async () => {
+            const redeemRequested = createMockRedemptionRequested({ systemRedemptionFeeUBA: "100000" });
+            const redemption = createMockRedemption();
+
+            mockEm.find.mockImplementation((entity: any) => {
+                if (entity === Minting || entity === IncompleteRedemption || entity === RedemptionWithTagRequestedEvent) return [];
+                if (entity === RedemptionRequested) return [redeemRequested];
+                if (entity === Redemption) return [redemption];
+                if (entity === RedemptionAmountIncompleteEvent) return [];
+                return [];
+            });
+
+            const result = await service.getProgress("0xUser");
+            const redeemEntry = result.find((entry) => entry.action === "REDEEM");
+
+            expect(redeemEntry?.amount).toBe("1.10");
+            expect(redeemEntry?.underlyingPaid).toBe("0.99");
+        });
+
+        it("should include the system fee in tagged redemption gross amount only", async () => {
+            const tagRedemption = {
+                ...createMockRedemptionRequested({ systemRedemptionFeeUBA: "100000" }),
+                destinationTag: "123",
+                status: "INPROGRESS",
+                processed: false,
+            };
+
+            mockEm.find.mockImplementation((entity: any) => {
+                if (entity === RedemptionWithTagRequestedEvent) return [tagRedemption];
+                return [];
+            });
+
+            const result = await service.getProgress("0xUser");
+            const redeemEntry = result.find((entry) => entry.redeemWithTag === true);
+
+            expect(redeemEntry?.amount).toBe("1.10");
+            expect(redeemEntry?.underlyingPaid).toBe("0.99");
         });
 
         it("should sort results by timestamp in descending order", async () => {

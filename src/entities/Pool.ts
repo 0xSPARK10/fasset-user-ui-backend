@@ -1,19 +1,22 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "pools" })
 export class Pool {
     @PrimaryKey({ autoincrement: true })
     id!: number;
 
+    @Index()
     @Property()
     vaultAddress: string;
 
     @Property()
     fasset: string;
 
+    @Index()
     @Property()
     poolAddress: string;
 
+    @Index()
     @Property()
     tokenAddress: string;
 

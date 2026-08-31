@@ -2,6 +2,7 @@ import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 /** Persisted RedemptionAmountIncomplete event from the AssetManager contract. */
 @Entity({ tableName: "redemption_amount_incomplete_event" })
+@Index({ properties: ["txhash", "redeemer"] })
 export class RedemptionAmountIncompleteEvent {
     @PrimaryKey({ autoincrement: true })
     id!: number;

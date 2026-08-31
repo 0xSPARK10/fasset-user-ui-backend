@@ -11,6 +11,8 @@ export enum RedemptionWithTagStatus {
 
 /** Persisted RedemptionWithTagRequested event from the AssetManager contract. */
 @Entity({ tableName: "redemption_with_tag_requested_event" })
+@Index({ properties: ["processed", "fasset", "id"] })
+@Index({ properties: ["txhash", "requestId"] })
 export class RedemptionWithTagRequestedEvent {
     @PrimaryKey({ autoincrement: true })
     id!: number;
@@ -33,6 +35,9 @@ export class RedemptionWithTagRequestedEvent {
 
     @Property()
     feeUBA: string;
+
+    @Property({ default: "0" })
+    systemRedemptionFeeUBA: string;
 
     @Property()
     firstUnderlyingBlock: string;
@@ -78,7 +83,8 @@ export class RedemptionWithTagRequestedEvent {
         destinationTag: string,
         timestamp: number,
         txhash: string,
-        fasset: string
+        fasset: string,
+        systemRedemptionFeeUBA: string = "0"
     ) {
         this.agentVault = agentVault;
         this.redeemer = redeemer;
@@ -86,6 +92,7 @@ export class RedemptionWithTagRequestedEvent {
         this.paymentAddress = paymentAddress;
         this.valueUBA = valueUBA;
         this.feeUBA = feeUBA;
+        this.systemRedemptionFeeUBA = systemRedemptionFeeUBA;
         this.firstUnderlyingBlock = firstUnderlyingBlock;
         this.lastUnderlyingBlock = lastUnderlyingBlock;
         this.lastUnderlyingTimestamp = lastUnderlyingTimestamp;

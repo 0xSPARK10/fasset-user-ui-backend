@@ -11,6 +11,7 @@ export enum DirectMintingStatus {
 
 /** Tracks the lifecycle of a single direct minting via Core Vault. */
 @Entity({ tableName: "direct_minting" })
+@Index({ properties: ["processed", "fasset", "id"] })
 export class DirectMinting {
     @PrimaryKey({ autoincrement: true })
     id!: number;

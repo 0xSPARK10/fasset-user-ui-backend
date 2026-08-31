@@ -497,6 +497,8 @@ export function createMockAssetManager(): Record<string, any> {
 
     return {
         getSettings: jest.fn().mockResolvedValue(defaultSettings),
+        systemRedemptionFeeBIPS: jest.fn().mockResolvedValue(0n),
+        minimumRedeemAmountUBA: jest.fn().mockResolvedValue(0n),
         getAgentInfo: jest.fn().mockResolvedValue({
             status: 0n,
             ownerManagementAddress: TEST_ADDRESS,

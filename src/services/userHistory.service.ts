@@ -107,7 +107,7 @@ export class HistoryService {
                 txhash: redeem,
             });
             const filteredRedeems = redeems.filter((red) => red.txhash === redeem);
-            const ticketValueUBA = filteredRedeems.reduce((sum, ticket) => sum + BigInt(ticket.valueUBA), 0n);
+            const ticketValueUBA = filteredRedeems.reduce((sum, ticket) => sum + BigInt(ticket.valueUBA) + BigInt(ticket.systemRedemptionFeeUBA ?? "0"), 0n);
             //Check if redemption was incomplete
             const incompleteData = incompleteRedeems.find((red) => red.txhash === redeem);
             let incomplete = false;
@@ -242,7 +242,11 @@ export class HistoryService {
             if (!this.botService.fassetList.includes(tagRedeem.fasset)) continue;
             const decimals = tagRedeem.fasset.includes("XRP") ? 6 : 8;
             const displayDecimals = tagRedeem.fasset.includes("XRP") ? 2 : 8;
-            const amount = formatBigIntToDisplayDecimals(BigInt(tagRedeem.valueUBA), displayDecimals, decimals);
+            const amount = formatBigIntToDisplayDecimals(
+                BigInt(tagRedeem.valueUBA) + BigInt(tagRedeem.systemRedemptionFeeUBA ?? "0"),
+                displayDecimals,
+                decimals
+            );
             const underlyingPaid = formatBigIntToDisplayDecimals(BigInt(tagRedeem.valueUBA) - BigInt(tagRedeem.feeUBA), displayDecimals, decimals);
             // Check for amount-based incomplete event
             const amountIncomplete = await this.em.findOne(RedemptionAmountIncompleteEvent, {

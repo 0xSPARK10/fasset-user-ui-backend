@@ -8,6 +8,7 @@ import type {
   FunctionFragment,
   Result,
   Interface,
+  AddressLike,
   ContractRunner,
   ContractMethod,
   Listener,
@@ -22,24 +23,71 @@ import type {
 
 export interface IRedeemExtendedSettingsInterface extends Interface {
   getFunction(
-    nameOrSignature: "minimumRedeemAmountUBA" | "setMinimumRedeemAmountUBA"
+    nameOrSignature:
+      | "effectiveSystemRedemptionFeeBIPS"
+      | "minimumRedeemAmountUBA"
+      | "systemRedemptionFeeBIPS"
+      | "systemRedemptionFeeReceiver"
+      | "setMinimumRedeemAmountUBA"
+      | "setSystemRedemptionFeeBIPS"
+      | "setSystemRedemptionFeeReceiver"
   ): FunctionFragment;
 
   encodeFunctionData(
+    functionFragment: "effectiveSystemRedemptionFeeBIPS",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "minimumRedeemAmountUBA",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "systemRedemptionFeeBIPS",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "systemRedemptionFeeReceiver",
     values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "setMinimumRedeemAmountUBA",
     values: [BigNumberish]
   ): string;
+  encodeFunctionData(
+    functionFragment: "setSystemRedemptionFeeBIPS",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setSystemRedemptionFeeReceiver",
+    values: [AddressLike]
+  ): string;
 
+  decodeFunctionResult(
+    functionFragment: "effectiveSystemRedemptionFeeBIPS",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "minimumRedeemAmountUBA",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "systemRedemptionFeeBIPS",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "systemRedemptionFeeReceiver",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "setMinimumRedeemAmountUBA",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setSystemRedemptionFeeBIPS",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setSystemRedemptionFeeReceiver",
     data: BytesLike
   ): Result;
 }
@@ -87,10 +135,28 @@ export interface IRedeemExtendedSettings extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  effectiveSystemRedemptionFeeBIPS: TypedContractMethod<[], [bigint], "view">;
+
   minimumRedeemAmountUBA: TypedContractMethod<[], [bigint], "view">;
+
+  systemRedemptionFeeBIPS: TypedContractMethod<[], [bigint], "view">;
+
+  systemRedemptionFeeReceiver: TypedContractMethod<[], [string], "view">;
 
   setMinimumRedeemAmountUBA: TypedContractMethod<
     [_valueUBA: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setSystemRedemptionFeeBIPS: TypedContractMethod<
+    [_feeBIPS: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setSystemRedemptionFeeReceiver: TypedContractMethod<
+    [_receiver: AddressLike],
     [void],
     "nonpayable"
   >;
@@ -100,11 +166,26 @@ export interface IRedeemExtendedSettings extends BaseContract {
   ): T;
 
   getFunction(
+    nameOrSignature: "effectiveSystemRedemptionFeeBIPS"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "minimumRedeemAmountUBA"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
+    nameOrSignature: "systemRedemptionFeeBIPS"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "systemRedemptionFeeReceiver"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "setMinimumRedeemAmountUBA"
   ): TypedContractMethod<[_valueUBA: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setSystemRedemptionFeeBIPS"
+  ): TypedContractMethod<[_feeBIPS: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setSystemRedemptionFeeReceiver"
+  ): TypedContractMethod<[_receiver: AddressLike], [void], "nonpayable">;
 
   filters: {};
 }

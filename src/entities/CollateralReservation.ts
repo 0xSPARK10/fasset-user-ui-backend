@@ -1,6 +1,7 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "collateral_reservation" })
+@Index({ properties: ["collateralReservationId", "txhash"] })
 export class CollateralReservationEvent {
     @PrimaryKey({ autoincrement: true })
     id!: number;
@@ -32,6 +33,7 @@ export class CollateralReservationEvent {
     @Property()
     paymentAddress: string;
 
+    @Index()
     @Property()
     paymentReference: string;
 

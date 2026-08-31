@@ -1,6 +1,8 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "redemption_requested" })
+@Index({ properties: ["txhash", "requestId"] })
+@Index({ properties: ["redeemer", "timestamp"] })
 export class RedemptionRequested {
     @PrimaryKey({ autoincrement: true })
     id!: number;
@@ -22,6 +24,9 @@ export class RedemptionRequested {
 
     @Property()
     feeUBA: string;
+
+    @Property({ default: "0" })
+    systemRedemptionFeeUBA: string;
 
     @Property()
     firstUnderlyingBlock: string;
@@ -57,7 +62,8 @@ export class RedemptionRequested {
         paymentReference: string,
         timestamp: number,
         txhash: string,
-        fasset: string
+        fasset: string,
+        systemRedemptionFeeUBA: string = "0"
     ) {
         this.agentVault = agentVault;
         this.redeemer = redeemer;
@@ -65,6 +71,7 @@ export class RedemptionRequested {
         this.paymentAddress = paymentAddress;
         this.valueUBA = valueUBA;
         this.feeUBA = feeUBA;
+        this.systemRedemptionFeeUBA = systemRedemptionFeeUBA;
         this.firstUnderlyingBlock = firstUnderlyingBlock;
         this.lastUnderlyingBlock = lastUnderlyingBlock;
         this.lastUnderlyingTimestamp = lastUnderlyingTimestamp;

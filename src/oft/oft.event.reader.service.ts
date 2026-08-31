@@ -4,6 +4,7 @@ import { ethers, FetchRequest } from "ethers";
 import {
     AM_REDEMPTION_REQUESTED_EVENT,
     AM_REDEMPTION_WITH_TAG_REQUESTED_EVENT,
+    AM_SYSTEM_REDEMPTION_FEE_PAID_EVENT,
     EXECUTOR_FEE_WEI,
     FAssetRedeemComposerEvents,
     FAssetRedeemComposerABI,
@@ -91,6 +92,10 @@ export class OFTEventReaderService implements OnModuleInit {
             address: this.oftConfig.AssetManagerAddress,
             topics: [AM_REDEMPTION_WITH_TAG_REQUESTED_EVENT.getEvent("RedemptionWithTagRequested").topicHash],
         };
+        const systemRedemptionFeePaidFilter = {
+            address: this.oftConfig.AssetManagerAddress,
+            topics: [AM_SYSTEM_REDEMPTION_FEE_PAID_EVENT.getEvent("SystemRedemptionFeePaid").topicHash],
+        };
         const packetSentFilter = {
             address: this.oftConfig.EndpointV2Address,
             topics: [EndpointV2Events.getEvent("PacketSent").topicHash],
@@ -115,6 +120,7 @@ export class OFTEventReaderService implements OnModuleInit {
             fAssetRedeemedLogs,
             redemptionRequestedLogs,
             redemptionWithTagRequestedLogs,
+            systemRedemptionFeePaidLogs,
             packetSentLogs,
             composeDeliveredLogs,
             fAssetRedeemFailedLogs,
@@ -139,6 +145,12 @@ export class OFTEventReaderService implements OnModuleInit {
                 toBlock: toBlock,
                 address: redemptionWithTagRequestedFilter.address,
                 topics: redemptionWithTagRequestedFilter.topics,
+            }),
+            this.provider.getLogs({
+                fromBlock: fromBlock,
+                toBlock: toBlock,
+                address: systemRedemptionFeePaidFilter.address,
+                topics: systemRedemptionFeePaidFilter.topics,
             }),
             this.provider.getLogs({ fromBlock: fromBlock, toBlock: toBlock, address: packetSentFilter.address, topics: packetSentFilter.topics }),
             this.provider.getLogs({
@@ -166,6 +178,7 @@ export class OFTEventReaderService implements OnModuleInit {
             fAssetRedeemed: fAssetRedeemedLogs,
             redemptionRequested: redemptionRequestedLogs,
             redemptionWithTagRequested: redemptionWithTagRequestedLogs,
+            systemRedemptionFeePaid: systemRedemptionFeePaidLogs,
             packetSent: packetSentLogs,
             composeDelivered: composeDeliveredLogs,
             fAssetRedeemFailed: fAssetRedeemFailedLogs,
@@ -299,6 +312,18 @@ export class OFTEventReaderService implements OnModuleInit {
         allLogs.redemptionRequested.forEach(appendReqLog);
         allLogs.redemptionWithTagRequested.forEach(appendReqLog);
 
+        const systemFeeKey = (transactionHash: string, requestId: string, agentVault: string) =>
+            `${transactionHash.toLowerCase()}:${requestId}:${agentVault.toLowerCase()}`;
+        const systemFeeByRequest = new Map<string, string>();
+        for (const feeLog of allLogs.systemRedemptionFeePaid ?? []) {
+            const parsed = AM_SYSTEM_REDEMPTION_FEE_PAID_EVENT.parseLog(feeLog);
+            const key = systemFeeKey(feeLog.transactionHash, parsed.args[1].toString(), parsed.args[0]);
+            if (systemFeeByRequest.has(key)) {
+                throw new Error(`Multiple SystemRedemptionFeePaid events found for redemption request ${key}`);
+            }
+            systemFeeByRequest.set(key, parsed.args[2].toString());
+        }
+
         // Cache topic0 hashes for branch decoding below.
         const plainTopic = AM_REDEMPTION_REQUESTED_EVENT.getEvent("RedemptionRequested").topicHash;
         const tagTopic = AM_REDEMPTION_WITH_TAG_REQUESTED_EVENT.getEvent("RedemptionWithTagRequested").topicHash;
@@ -337,6 +362,8 @@ export class OFTEventReaderService implements OnModuleInit {
                     const isTagEvent = reqLog.topics[0] === tagTopic;
                     const parsed = isTagEvent ? AM_REDEMPTION_WITH_TAG_REQUESTED_EVENT.parseLog(reqLog) : AM_REDEMPTION_REQUESTED_EVENT.parseLog(reqLog);
                     const destinationTag = isTagEvent ? parsed.args[12].toString() : null;
+                    const systemRedemptionFeeUBA =
+                        systemFeeByRequest.get(systemFeeKey(reqLog.transactionHash, parsed.args[2].toString(), parsed.args[0])) ?? "0";
                     const oftRedemption = new OFTRedemption(
                         parsed.args[0], // agentVault
                         redeemer, // redeemer (user address from FAssetRedeemed)
@@ -351,7 +378,8 @@ export class OFTEventReaderService implements OnModuleInit {
                         guid, // guid
                         redeemerAccount, // personalRedeemerAddress
                         srcEid, // srcEid
-                        destinationTag // destinationTag (null unless tag event)
+                        destinationTag, // destinationTag (null unless tag event)
+                        systemRedemptionFeeUBA
                     );
                     await this.em.persistAndFlush(oftRedemption);
                 }

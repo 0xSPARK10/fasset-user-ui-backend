@@ -1304,6 +1304,8 @@ export interface IAssetManagerInterface extends Interface {
       | "makeAgentAvailable"
       | "markUnblockedDirectMintingAllowed"
       | "maximumTransferToCoreVault"
+      | "effectiveSystemRedemptionFeeBIPS"
+      | "systemRedemptionFeeBIPS"
       | "minimumRedeemAmountUBA"
       | "mintFromFreeUnderlying"
       | "mintingPaused"
@@ -1414,6 +1416,7 @@ export interface IAssetManagerInterface extends Interface {
       | "ReturnFromCoreVaultRequested"
       | "SelfClose"
       | "SelfMint"
+      | "SystemRedemptionFeePaid"
       | "SettingArrayChanged"
       | "SettingChanged"
       | "TransferToCoreVaultDefaulted"
@@ -1802,6 +1805,14 @@ export interface IAssetManagerInterface extends Interface {
   encodeFunctionData(
     functionFragment: "maximumTransferToCoreVault",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "effectiveSystemRedemptionFeeBIPS",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "systemRedemptionFeeBIPS",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "minimumRedeemAmountUBA",
@@ -2351,6 +2362,14 @@ export interface IAssetManagerInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "maximumTransferToCoreVault",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "effectiveSystemRedemptionFeeBIPS",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "systemRedemptionFeeBIPS",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -3872,6 +3891,28 @@ export namespace SelfMintEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace SystemRedemptionFeePaidEvent {
+  export type InputTuple = [
+    agentVault: AddressLike,
+    requestId: BigNumberish,
+    feeUBA: BigNumberish
+  ];
+  export type OutputTuple = [
+    agentVault: string,
+    requestId: bigint,
+    feeUBA: bigint
+  ];
+  export interface OutputObject {
+    agentVault: string;
+    requestId: bigint;
+    feeUBA: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace SettingArrayChangedEvent {
   export type InputTuple = [name: string, value: BigNumberish[]];
   export type OutputTuple = [name: string, value: bigint[]];
@@ -4692,6 +4733,10 @@ export interface IAssetManager extends BaseContract {
     "view"
   >;
 
+  effectiveSystemRedemptionFeeBIPS: TypedContractMethod<[], [bigint], "view">;
+
+  systemRedemptionFeeBIPS: TypedContractMethod<[], [bigint], "view">;
+
   minimumRedeemAmountUBA: TypedContractMethod<[], [bigint], "view">;
 
   mintFromFreeUnderlying: TypedContractMethod<
@@ -5506,6 +5551,12 @@ export interface IAssetManager extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "effectiveSystemRedemptionFeeBIPS"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "systemRedemptionFeeBIPS"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "minimumRedeemAmountUBA"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -6225,6 +6276,13 @@ export interface IAssetManager extends BaseContract {
     SelfMintEvent.InputTuple,
     SelfMintEvent.OutputTuple,
     SelfMintEvent.OutputObject
+  >;
+  getEvent(
+    key: "SystemRedemptionFeePaid"
+  ): TypedContractEvent<
+    SystemRedemptionFeePaidEvent.InputTuple,
+    SystemRedemptionFeePaidEvent.OutputTuple,
+    SystemRedemptionFeePaidEvent.OutputObject
   >;
   getEvent(
     key: "SettingArrayChanged"
@@ -6970,6 +7028,17 @@ export interface IAssetManager extends BaseContract {
       SelfMintEvent.InputTuple,
       SelfMintEvent.OutputTuple,
       SelfMintEvent.OutputObject
+    >;
+
+    "SystemRedemptionFeePaid(address,uint256,uint256)": TypedContractEvent<
+      SystemRedemptionFeePaidEvent.InputTuple,
+      SystemRedemptionFeePaidEvent.OutputTuple,
+      SystemRedemptionFeePaidEvent.OutputObject
+    >;
+    SystemRedemptionFeePaid: TypedContractEvent<
+      SystemRedemptionFeePaidEvent.InputTuple,
+      SystemRedemptionFeePaidEvent.OutputTuple,
+      SystemRedemptionFeePaidEvent.OutputObject
     >;
 
     "SettingArrayChanged(string,uint256[])": TypedContractEvent<

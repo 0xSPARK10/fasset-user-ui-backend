@@ -11,12 +11,51 @@ import type {
 const _abi = [
   {
     inputs: [],
+    name: "effectiveSystemRedemptionFeeBIPS",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
     name: "minimumRedeemAmountUBA",
     outputs: [
       {
         internalType: "uint256",
         name: "",
         type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "systemRedemptionFeeBIPS",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "systemRedemptionFeeReceiver",
+    outputs: [
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
       },
     ],
     stateMutability: "view",
@@ -31,6 +70,32 @@ const _abi = [
       },
     ],
     name: "setMinimumRedeemAmountUBA",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "_feeBIPS",
+        type: "uint256",
+      },
+    ],
+    name: "setSystemRedemptionFeeBIPS",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "_receiver",
+        type: "address",
+      },
+    ],
+    name: "setSystemRedemptionFeeReceiver",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",

@@ -92,6 +92,9 @@ import { keccak256, toUtf8Bytes } from "ethers";
 
 const NUM_RETRIES = 3;
 const MAX_BIPS = 10_000;
+// Diamond FunctionNotFound(bytes4) for systemRedemptionFeeBIPS().
+const SYSTEM_REDEMPTION_FEE_BIPS_FUNCTION_NOT_FOUND =
+    "0x5416eb98f345523800000000000000000000000000000000000000000000000000000000";
 
 const sigCollateralReserved = keccak256(
     toUtf8Bytes("CollateralReserved(address,address,uint256,uint256,uint256,uint256,uint256,uint256,string,bytes32,address,uint256)")
@@ -123,6 +126,34 @@ export class UserService {
      */
     private getAssetManager(fasset: string): IIAssetManager {
         return this.contractService.get<IIAssetManager>(`AssetManager_${fasset}`);
+    }
+
+    /**
+     * Combines the system fee, charged first, with the regular redemption fee
+     * charged on the remaining redemption value. The result is rounded to the
+     * nearest whole BIP so the existing API contract can remain unchanged.
+     */
+    private combineRedemptionFeeBIPS(redemptionFeeBIPS: bigint, systemRedemptionFeeBIPS: bigint): bigint {
+        const maxBIPS = BigInt(MAX_BIPS);
+        const combinedFeeNumerator = (systemRedemptionFeeBIPS + redemptionFeeBIPS) * maxBIPS - systemRedemptionFeeBIPS * redemptionFeeBIPS;
+        return (combinedFeeNumerator + maxBIPS / 2n) / maxBIPS;
+    }
+
+    /** Returns zero only when the AssetManager diamond does not expose the system fee getter. */
+    private async getSystemRedemptionFeeBIPS(assetManager: IIAssetManager): Promise<bigint> {
+        try {
+            return await assetManager.systemRedemptionFeeBIPS();
+        } catch (error) {
+            const callError = error as { code?: string; data?: string };
+            if (
+                callError.code === "CALL_EXCEPTION" &&
+                typeof callError.data === "string" &&
+                callError.data.toLowerCase() === SYSTEM_REDEMPTION_FEE_BIPS_FUNCTION_NOT_FOUND
+            ) {
+                return 0n;
+            }
+            throw error;
+        }
     }
 
     /**
@@ -360,19 +391,24 @@ export class UserService {
     async getRedemptionFee(fasset: string): Promise<RedemptionFee> {
         try {
             const assetManager = this.getAssetManager(fasset);
-            const settings = await assetManager.getSettings();
+            const [settings, systemRedemptionFeeBIPS, minimumRedeemAmountUBAValue] = await Promise.all([
+                assetManager.getSettings(),
+                this.getSystemRedemptionFeeBIPS(assetManager),
+                assetManager.minimumRedeemAmountUBA(),
+            ]);
+            const redemptionFee = this.combineRedemptionFeeBIPS(settings.redemptionFeeBIPS, systemRedemptionFeeBIPS).toString();
             // Calculate minimum redeem amount in UBA from AMG
-            const minimumRedeemAmountUBA = (await assetManager.minimumRedeemAmountUBA()).toString();
+            const minimumRedeemAmountUBA = minimumRedeemAmountUBAValue.toString();
             if (fasset.includes("XRP")) {
                 const redQueue = await this.getRedemptionQueue(fasset);
                 return {
-                    redemptionFee: settings.redemptionFeeBIPS.toString(),
+                    redemptionFee,
                     maxLotsOneRedemption: redQueue.maxLotsOneRedemption,
                     maxRedemptionLots: redQueue.maxLots,
                     minimumRedeemAmountUBA,
                 };
             }
-            return { redemptionFee: settings.redemptionFeeBIPS.toString(), maxLotsOneRedemption: -1, maxRedemptionLots: -1, minimumRedeemAmountUBA };
+            return { redemptionFee, maxLotsOneRedemption: -1, maxRedemptionLots: -1, minimumRedeemAmountUBA };
         } catch (error) {
             logger.error("Error in getRedemptionFee:", error);
             throw error;
@@ -382,8 +418,9 @@ export class UserService {
     async getProtocolFees(fasset: string): Promise<ProtocolFees> {
         try {
             const assetManager = this.getAssetManager(fasset);
-            const settings = await assetManager.getSettings();
-            return { redemptionFee: settings.redemptionFeeBIPS.toString() };
+            const [settings, systemRedemptionFeeBIPS] = await Promise.all([assetManager.getSettings(), this.getSystemRedemptionFeeBIPS(assetManager)]);
+            const redemptionFee = this.combineRedemptionFeeBIPS(settings.redemptionFeeBIPS, systemRedemptionFeeBIPS);
+            return { redemptionFee: redemptionFee.toString() };
         } catch (error) {
             logger.error("Error in getProtocolFees:", error);
             throw error;
@@ -415,7 +452,8 @@ export class UserService {
     async getExecutorAddress(fasset: string): Promise<ExecutorResponse> {
         try {
             const assetManager = this.getAssetManager(fasset);
-            const settings = await assetManager.getSettings();
+            const [settings, systemRedemptionFeeBIPS] = await Promise.all([assetManager.getSettings(), this.getSystemRedemptionFeeBIPS(assetManager)]);
+            const redemptionFee = this.combineRedemptionFeeBIPS(settings.redemptionFeeBIPS, systemRedemptionFeeBIPS);
             const network = this.configService.get<string>("NETWORK", "coston2");
             const customExecutor = this.configService.get<string>("CUSTOM_EXECUTOR");
             let executorAddress: string;
@@ -433,7 +471,7 @@ export class UserService {
             return {
                 executorAddress,
                 executorFee,
-                redemptionFee: settings.redemptionFeeBIPS.toString(),
+                redemptionFee: redemptionFee.toString(),
             };
         } catch (error) {
             logger.error("Error in getExecutorAddress:", error);
@@ -816,12 +854,6 @@ export class UserService {
             const provider = this.ethersService.getProvider();
             const priceReader = this.getPriceReader();
 
-            // Get native token symbol from the first fasset's settings
-            const firstFasset = this.botService.fassetList[0];
-            const assetManager = this.getAssetManager(firstFasset);
-            //assetManager.getCoreVaultNativeAddress()
-            const settings = await assetManager.getSettings();
-
             // Get native token price (e.g., CFLR/FLR/SGB)
             const nativeSymbol = this.fassetConfigService.getNativeSymbol();
             const [cflrPrice, , cflrPriceDecimals] = await priceReader.getPrice(nativeSymbol);
@@ -843,8 +875,11 @@ export class UserService {
             for (const fasset of fassets.fassets) {
                 const fAssetManager = this.getAssetManager(fasset);
                 const fAsset = this.getFAsset(fasset);
-                const settingsAsset = await fAssetManager.getSettings();
-                const redemptionFee = settings.redemptionFeeBIPS;
+                const [settingsAsset, systemRedemptionFeeBIPS] = await Promise.all([
+                    fAssetManager.getSettings(),
+                    this.getSystemRedemptionFeeBIPS(fAssetManager),
+                ]);
+                const redemptionFee = this.combineRedemptionFeeBIPS(settingsAsset.redemptionFeeBIPS, systemRedemptionFeeBIPS);
                 const assetSymbol = await fAsset.assetSymbol();
                 const [priceAsset, , priceAssetDecimals] = await priceReader.getPrice(assetSymbol);
                 const fBalance = await fAsset.balanceOf(address);
@@ -1087,6 +1122,21 @@ export class UserService {
             const block = await provider.getBlock("latest");
             const timestamp = block.timestamp;
             let amount = 0n;
+            const systemRedemptionFees = new Map<string, { agentVault: string; feeUBA: bigint }>();
+            for (const log of receipt.logs) {
+                try {
+                    const parsed = assetManager.interface.parseLog({ topics: [...log.topics], data: log.data });
+                    if (parsed?.name === "SystemRedemptionFeePaid") {
+                        const decoded = assetManager.interface.decodeEventLog("SystemRedemptionFeePaid", log.data, log.topics);
+                        systemRedemptionFees.set(decoded.requestId.toString(), {
+                            agentVault: decoded.agentVault,
+                            feeUBA: BigInt(decoded.feeUBA),
+                        });
+                    }
+                } catch {
+                    // skip logs that aren't AssetManager system redemption fee events
+                }
+            }
             for (const log of receipt.logs) {
                 try {
                     let eventName: string;
@@ -1099,7 +1149,9 @@ export class UserService {
                     if (eventName === "RedemptionRequested") {
                         const decoded = assetManager.interface.decodeEventLog("RedemptionRequested", log.data, log.topics);
                         const amountUBA = BigInt(decoded.valueUBA) - BigInt(decoded.feeUBA);
-                        amount = amount + BigInt(decoded.valueUBA);
+                        const systemFee = systemRedemptionFees.get(decoded.requestId.toString());
+                        const systemFeeUBA = systemFee && systemFee.agentVault.toLowerCase() === decoded.agentVault.toLowerCase() ? systemFee.feeUBA : 0n;
+                        amount = amount + BigInt(decoded.valueUBA) + systemFeeUBA;
                         const redemption: RedemptionData = {
                             type: "redeem",
                             requestId: decoded.requestId.toString(),
@@ -1118,7 +1170,9 @@ export class UserService {
                         // Tag-based redemption — parse same fields as RedemptionRequested
                         const decoded = assetManager.interface.decodeEventLog("RedemptionWithTagRequested", log.data, log.topics);
                         const amountUBA = BigInt(decoded.valueUBA) - BigInt(decoded.feeUBA);
-                        amount = amount + BigInt(decoded.valueUBA);
+                        const systemFee = systemRedemptionFees.get(decoded.requestId.toString());
+                        const systemFeeUBA = systemFee && systemFee.agentVault.toLowerCase() === decoded.agentVault.toLowerCase() ? systemFee.feeUBA : 0n;
+                        amount = amount + BigInt(decoded.valueUBA) + systemFeeUBA;
                         const redemption: RedemptionData = {
                             type: "redeem",
                             requestId: decoded.requestId.toString(),
@@ -1177,7 +1231,7 @@ export class UserService {
         // Build RedemptionData from standard RedemptionRequested entities
         for (const entity of standardEntities) {
             const amountUBA = BigInt(entity.valueUBA) - BigInt(entity.feeUBA);
-            amount = amount + BigInt(entity.valueUBA);
+            amount = amount + BigInt(entity.valueUBA) + BigInt(entity.systemRedemptionFeeUBA ?? "0");
             if (!from) from = entity.redeemer;
             redemptions.push({
                 type: "redeem",
@@ -1197,7 +1251,7 @@ export class UserService {
         // Build RedemptionData from tag-based entities
         for (const entity of tagEntities) {
             const amountUBA = BigInt(entity.valueUBA) - BigInt(entity.feeUBA);
-            amount = amount + BigInt(entity.valueUBA);
+            amount = amount + BigInt(entity.valueUBA) + BigInt(entity.systemRedemptionFeeUBA ?? "0");
             if (!from) from = entity.redeemer;
             redemptions.push({
                 type: "redeem",
@@ -1599,8 +1653,9 @@ export class UserService {
             const priceReader = this.getPriceReader();
             for (const f of this.botService.fassetList) {
                 const assetManager = this.getAssetManager(f);
-                const settings = await assetManager.getSettings();
-                const redemptionFee = Number(settings.redemptionFeeBIPS.toString()) / 100;
+                const [settings, systemRedemptionFeeBIPS] = await Promise.all([assetManager.getSettings(), this.getSystemRedemptionFeeBIPS(assetManager)]);
+                const combinedRedemptionFeeBIPS = this.combineRedemptionFeeBIPS(settings.redemptionFeeBIPS, systemRedemptionFeeBIPS);
+                const redemptionFee = Number(combinedRedemptionFeeBIPS) / 100;
                 const lotSize = await this.getLotSize(f);
                 const fassetFee = (redemptionFee / 100) * lotSize.lotSize;
                 const fAsset = this.getFAsset(f);

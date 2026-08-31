@@ -1,4 +1,4 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "redemption_blocked" })
 export class RedemptionBlocked {
@@ -11,6 +11,7 @@ export class RedemptionBlocked {
     @Property()
     redeemer: string;
 
+    @Index()
     @Property()
     requestId: string;
 

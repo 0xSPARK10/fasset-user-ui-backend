@@ -1,6 +1,9 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "minting" })
+@Index({ properties: ["processed", "fasset", "id"] })
+@Index({ properties: ["txhash", "collateralReservationId"] })
+@Index({ properties: ["userAddress", "timestamp"] })
 export class Minting {
     @PrimaryKey({ autoincrement: true })
     id!: number;

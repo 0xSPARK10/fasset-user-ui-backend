@@ -130,6 +130,9 @@ export class OFTService {
             try {
                 const tickets = redemptionsByTxhash.get(redeem) || [];
                 const ticketValueUBA = tickets.reduce((sum, ticket) => sum + BigInt(ticket.valueUBA), 0n);
+                // AssetManager request values are emitted after the system fee is removed,
+                // so add every ticket's exact fee back when reconstructing the gross amount.
+                const systemRedemptionFeeUBA = tickets.reduce((sum, ticket) => sum + BigInt(ticket.systemRedemptionFeeUBA ?? "0"), 0n);
                 const incompleteData = incompleteByTxhash.get(redeem);
                 const amountIncompleteData = amountIncompleteByTxhash.get(redeem);
                 const incomplete = !!incompleteData || !!amountIncompleteData;
@@ -141,7 +144,7 @@ export class OFTService {
                 const composerFee = composerFeeByGuid.get(tickets[0].guid) ?? 0n;
                 for (const ticket of tickets) {
                     const redemptionAmount = formatBigIntToDisplayDecimals(
-                        ticketValueUBA + composerFee,
+                        ticketValueUBA + systemRedemptionFeeUBA + composerFee,
                         ticket.fasset.includes("XRP") ? 2 : 8,
                         ticket.fasset.includes("XRP") ? 6 : 8
                     );

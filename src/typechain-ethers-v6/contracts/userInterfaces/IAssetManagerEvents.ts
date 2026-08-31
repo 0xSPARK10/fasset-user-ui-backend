@@ -114,6 +114,7 @@ export interface IAssetManagerEventsInterface extends Interface {
       | "RedemptionTicketsConsolidated"
       | "SelfClose"
       | "SelfMint"
+      | "SystemRedemptionFeePaid"
       | "SettingArrayChanged"
       | "SettingChanged"
       | "UnderlyingBalanceChanged"
@@ -1114,6 +1115,28 @@ export namespace SelfMintEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace SystemRedemptionFeePaidEvent {
+  export type InputTuple = [
+    agentVault: AddressLike,
+    requestId: BigNumberish,
+    feeUBA: BigNumberish
+  ];
+  export type OutputTuple = [
+    agentVault: string,
+    requestId: bigint,
+    feeUBA: bigint
+  ];
+  export interface OutputObject {
+    agentVault: string;
+    requestId: bigint;
+    feeUBA: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace SettingArrayChangedEvent {
   export type InputTuple = [name: string, value: BigNumberish[]];
   export type OutputTuple = [name: string, value: bigint[]];
@@ -1646,6 +1669,13 @@ export interface IAssetManagerEvents extends BaseContract {
     SelfMintEvent.InputTuple,
     SelfMintEvent.OutputTuple,
     SelfMintEvent.OutputObject
+  >;
+  getEvent(
+    key: "SystemRedemptionFeePaid"
+  ): TypedContractEvent<
+    SystemRedemptionFeePaidEvent.InputTuple,
+    SystemRedemptionFeePaidEvent.OutputTuple,
+    SystemRedemptionFeePaidEvent.OutputObject
   >;
   getEvent(
     key: "SettingArrayChanged"
@@ -2205,6 +2235,17 @@ export interface IAssetManagerEvents extends BaseContract {
       SelfMintEvent.InputTuple,
       SelfMintEvent.OutputTuple,
       SelfMintEvent.OutputObject
+    >;
+
+    "SystemRedemptionFeePaid(address,uint256,uint256)": TypedContractEvent<
+      SystemRedemptionFeePaidEvent.InputTuple,
+      SystemRedemptionFeePaidEvent.OutputTuple,
+      SystemRedemptionFeePaidEvent.OutputObject
+    >;
+    SystemRedemptionFeePaid: TypedContractEvent<
+      SystemRedemptionFeePaidEvent.InputTuple,
+      SystemRedemptionFeePaidEvent.OutputTuple,
+      SystemRedemptionFeePaidEvent.OutputObject
     >;
 
     "SettingArrayChanged(string,uint256[])": TypedContractEvent<

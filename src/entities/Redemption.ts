@@ -1,6 +1,8 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "redemption" })
+@Index({ properties: ["processed", "fasset", "id"] })
+@Index({ properties: ["txhash", "requestId"] })
 export class Redemption {
     @PrimaryKey({ autoincrement: true })
     id!: number;

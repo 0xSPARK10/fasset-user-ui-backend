@@ -31,6 +31,7 @@ describe("OFTService", () => {
         paymentAddress: "rPaymentAddress",
         valueUBA: "1000000",
         feeUBA: "10000",
+        systemRedemptionFeeUBA: "0",
         paymentReference: "0xPaymentReference",
         timestamp: Date.now(),
         txhash: "0xRedemptionHash",
@@ -100,6 +101,21 @@ describe("OFTService", () => {
                 vaultToken: "USDT0",
                 vaultTokenValueRedeemed: "0",
                 poolTokenValueRedeemed: "0",
+            })
+        );
+    });
+
+    it("adds the system and composer fees to gross redemption history without changing the underlying payment", async () => {
+        responses.set(OFTRedemption, [{ ...redemption, defaulted: false, systemRedemptionFeeUBA: "100000" }]);
+        responses.set(OFTComposerFeeCollected, [{ guid: redemption.guid, composerFee: "50000" }]);
+
+        const history = await service.getOFTHistory("0xRedeemer");
+
+        expect(history[0]).toEqual(
+            expect.objectContaining({
+                action: "REDEEM",
+                amount: "1.15",
+                underlyingPaid: "0.99",
             })
         );
     });

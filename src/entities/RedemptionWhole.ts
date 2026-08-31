@@ -1,10 +1,11 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "full_redemption" })
 export class FullRedemption {
     @PrimaryKey({ autoincrement: true })
     id!: number;
 
+    @Index()
     @Property()
     txhash: string;
 

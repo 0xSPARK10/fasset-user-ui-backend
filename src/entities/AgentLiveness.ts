@@ -1,10 +1,11 @@
-import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
+import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 
 @Entity({ tableName: "liveness" })
 export class Liveness {
     @PrimaryKey({ autoincrement: true })
     id!: number;
 
+    @Index()
     @Property()
     vaultAddress: string;
 
