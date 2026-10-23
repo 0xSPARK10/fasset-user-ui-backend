@@ -1,6 +1,10 @@
 # Stage 2: Build the NestJS application
-FROM node:20-alpine AS nestjs-builder
+FROM node:22.23.4-alpine AS nestjs-builder
 RUN apk add --no-cache git
+# hadolint ignore=DL3018
+RUN apk add --no-cache --upgrade ca-certificates ca-certificates-bundle
+# Node bundles its own roots; use the system store so CA removals apply
+ENV NODE_OPTIONS=--use-openssl-ca
 RUN corepack enable && corepack prepare yarn@3.6.4 --activate
 
 WORKDIR /app
