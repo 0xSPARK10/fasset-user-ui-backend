@@ -53,6 +53,7 @@ import { EventReaderService } from "../../src/services/event.reader.service";
 import { EthersService } from "../../src/services/ethers.service";
 import { ContractService } from "../../src/services/contract.service";
 import { FassetConfigService } from "../../src/services/fasset.config.service";
+import { DirectMintingExecutedToSmartAccountEvent } from "../../src/entities/DirectMintingExecutedToSmartAccountEvent";
 
 /* ---- shared mock instances ---- */
 
@@ -251,6 +252,7 @@ describe("EventReaderService", () => {
             const mockLog = {
                 address: "0xAssetManagerAddr",
                 transactionHash: "0xTxHash123",
+                blockNumber: 150,
                 topics: ["0xtopichash", "0x" + "0".repeat(64)],
                 data: "0x" + "0".repeat(64),
             };
@@ -275,6 +277,7 @@ describe("EventReaderService", () => {
             expect(result[0]).toEqual({
                 address: "0xAssetManagerAddr",
                 transactionHash: "0xTxHash123",
+                blockNumber: 150,
                 parsed: mockParsedEvent,
             });
         });
@@ -469,7 +472,7 @@ describe("EventReaderService", () => {
      * ------------------------------------------------------------------ */
 
     describe("readEventsFrom preserves raw log metadata", () => {
-        it("should carry the original log address and transactionHash through to the result", async () => {
+        it("should carry the original log address, transactionHash, and blockNumber through to the result", async () => {
             /**
              * The decoded result should retain the original address and
              * transactionHash from the raw log, not from the parsed event.
@@ -477,6 +480,7 @@ describe("EventReaderService", () => {
             const mockLog = {
                 address: "0xSpecificAddress",
                 transactionHash: "0xSpecificTxHash",
+                blockNumber: 77,
                 topics: ["0xtopichash"],
                 data: "0x1234",
             };
@@ -490,6 +494,37 @@ describe("EventReaderService", () => {
             expect(result).toHaveLength(1);
             expect(result[0].address).toBe("0xSpecificAddress");
             expect(result[0].transactionHash).toBe("0xSpecificTxHash");
+            expect(result[0].blockNumber).toBe(77);
+        });
+    });
+
+    describe("execution metadata repair", () => {
+        it("fills only missing transaction and block metadata on replay", async () => {
+            const event = new DirectMintingExecutedToSmartAccountEvent(
+                "abc123",
+                "rSource",
+                "0xExecutor",
+                "900000",
+                "50000",
+                "0xFE",
+                1_725_000_000_000,
+                "0xOldTx",
+                "FTestXRP"
+            );
+            event.txhash = null;
+
+            await (service as any).repairExecutionMetadata(
+                event,
+                "DirectMintingExecutedToSmartAccount",
+                "abc123",
+                "FTestXRP",
+                "0xNewTx",
+                12_345
+            );
+
+            expect(event.txhash).toBe("0xNewTx");
+            expect(event.blockNumber).toBe(12_345);
+            expect(mockEm.persistAndFlush).toHaveBeenCalledWith(event);
         });
     });
 

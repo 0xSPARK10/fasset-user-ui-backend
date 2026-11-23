@@ -24,6 +24,8 @@ import { MintingDefaultEvent } from "../../src/entities/MintingDefaultEvent";
 import { RedemptionBlocked } from "../../src/entities/RedemptionBlockedEvent";
 import { OFTRedemptionFailed } from "../../src/entities/OFTRedemptionFailed";
 import { OFTComposerFeeCollected } from "../../src/entities/OFTComposerFeeCollected";
+import { DirectMinting, DirectMintingStatus } from "../../src/entities/DirectMinting";
+import { DirectMintingRecoveryPayment } from "../../src/entities/DirectMintingRecoveryPayment";
 
 /* ---- mock logger to suppress output in tests ---- */
 jest.mock("src/logger/winston.logger", () => ({
@@ -61,10 +63,10 @@ describe("CleaningService", () => {
     });
 
     describe("deleteOldMintingsREdemptions", () => {
-        it("should call nativeDelete for all 24 entity types", async () => {
+        it("should call nativeDelete for all 25 entity types", async () => {
             await service.deleteOldMintingsREdemptions();
 
-            expect(mockEm.nativeDelete).toHaveBeenCalledTimes(24);
+            expect(mockEm.nativeDelete).toHaveBeenCalledTimes(25);
         });
 
         it.each([
@@ -93,6 +95,26 @@ describe("CleaningService", () => {
             const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
             const expectedThreshold = Date.now() - sevenDaysMs;
             expect(Math.abs(mintingCall[1].timestamp.$lt - expectedThreshold)).toBeLessThan(5000);
+        });
+
+        it("should retain awaiting and pending recovery actions beyond seven days", async () => {
+            await service.deleteOldMintingsREdemptions();
+
+            const mintingCall = mockEm.nativeDelete.mock.calls.find((call) => call[0] === Minting);
+            expect(mockEm.nativeDelete).toHaveBeenCalledWith(DirectMinting, {
+                timestamp: { $lt: mintingCall[1].timestamp.$lt },
+                status: { $nin: [DirectMintingStatus.AWAITING_RECOVERY, DirectMintingStatus.RECOVERY_PENDING] },
+            });
+        });
+
+        it("should delete only processed recovery payments older than seven days", async () => {
+            await service.deleteOldMintingsREdemptions();
+
+            const mintingCall = mockEm.nativeDelete.mock.calls.find((call) => call[0] === Minting);
+            expect(mockEm.nativeDelete).toHaveBeenCalledWith(DirectMintingRecoveryPayment, {
+                timestamp: { $lt: mintingCall[1].timestamp.$lt },
+                processed: true,
+            });
         });
 
         it("should delete Redemption entities older than 7 days", async () => {

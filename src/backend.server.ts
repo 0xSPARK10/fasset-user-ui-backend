@@ -30,7 +30,7 @@ const OPTIONAL_ENV_VARS = [
  * Validates that all required environment variables are set.
  * Throws an error listing missing required vars. Logs warnings for missing optional vars.
  */
-function validateEnvVars(): void {
+export function validateEnvVars(): void {
     const missing: string[] = [];
 
     // Check always-required vars
@@ -40,8 +40,25 @@ function validateEnvVars(): void {
         }
     }
 
+    const smartAccountsEnabled = process.env.NETWORK === "flare" || process.env.NETWORK === "coston2";
+    const smartAccountsApiUrl = process.env.SMART_ACCOUNTS_API_URL?.trim();
+    if (smartAccountsEnabled && !smartAccountsApiUrl) {
+        missing.push("SMART_ACCOUNTS_API_URL");
+    }
+
     if (missing.length > 0) {
         throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+    }
+
+    if (smartAccountsEnabled) {
+        try {
+            const url = new URL(smartAccountsApiUrl as string);
+            if (url.protocol !== "http:" && url.protocol !== "https:") {
+                throw new Error("unsupported protocol");
+            }
+        } catch {
+            throw new Error("Invalid SMART_ACCOUNTS_API_URL: expected an absolute HTTP(S) URL");
+        }
     }
 
     // Warn about missing optional vars (app can still start)

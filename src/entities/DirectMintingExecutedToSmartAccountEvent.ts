@@ -31,6 +31,10 @@ export class DirectMintingExecutedToSmartAccountEvent {
     @Property({ nullable: true })
     txhash?: string;
 
+    /** Block number of the originating AssetManager log. */
+    @Property({ nullable: true })
+    blockNumber: number | null;
+
     @Property()
     fasset: string;
 
@@ -43,7 +47,8 @@ export class DirectMintingExecutedToSmartAccountEvent {
         memoData: string,
         timestamp: number,
         txhash: string,
-        fasset: string
+        fasset: string,
+        blockNumber?: number | null
     ) {
         this.transactionId = transactionId;
         this.sourceAddress = sourceAddress;
@@ -54,5 +59,6 @@ export class DirectMintingExecutedToSmartAccountEvent {
         this.timestamp = timestamp;
         this.txhash = txhash;
         this.fasset = fasset;
+        this.blockNumber = blockNumber ?? null;
     }
 }

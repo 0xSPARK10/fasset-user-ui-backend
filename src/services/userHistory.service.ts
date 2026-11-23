@@ -197,6 +197,7 @@ export class HistoryService {
             const directMintings = await this.em.find(DirectMinting, {
                 userAddress: xrpAddress,
                 timestamp: { $gte: date },
+                mintType: { $ne: "oft_candidate" },
             });
             for (const dm of directMintings) {
                 if (!this.botService.fassetList.includes(dm.fasset)) continue;

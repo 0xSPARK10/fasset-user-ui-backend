@@ -1209,4 +1209,163 @@ describe("VerifierService", () => {
             expect(tx!.reference).toBe("0xalready");
         });
     });
+
+    describe("authoritative smart-account and recovery references", () => {
+        const userOpHash = "ab".repeat(32);
+
+        it("decodes the exact smart-account layout without losing uint64 precision", () => {
+            const service = createService(ChainId.testXRP);
+            const memo = `0xFE7f${"ffffffffffffffff"}${userOpHash.toUpperCase()}`;
+
+            const decoded = (service as any).decodeDirectMintingRef(memo);
+
+            expect(decoded).toEqual({
+                type: "SMART_ACCOUNT",
+                walletId: 0x7f,
+                executorFeeUBA: 0xffffffffffffffffn,
+                userOpHash: `0x${userOpHash}`,
+            });
+        });
+
+        it.each([
+            `FE01${"00".repeat(7)}${userOpHash}`,
+            `FE01${"00".repeat(9)}${userOpHash}`,
+            `FE01${"00".repeat(8)}${"gg".repeat(32)}`,
+        ])("rejects a malformed FE reference: %s", (memo) => {
+            const service = createService(ChainId.testXRP);
+
+            expect((service as any).decodeDirectMintingRef(memo)).toEqual({ type: null });
+        });
+
+        it.each(["", "0x", "0X"])("decodes an E0 recovery target and uint64 fee with prefix %j", (prefix) => {
+            const service = createService(ChainId.testXRP);
+            const memo = `${prefix}E007${"ffffffffffffffff"}${userOpHash.toUpperCase()}`;
+
+            expect((service as any).decodeDirectMintingRef(memo)).toEqual({
+                type: "RECOVERY",
+                walletId: 7,
+                executorFeeUBA: 0xffffffffffffffffn,
+                originalTxHash: `0x${userOpHash}`,
+            });
+        });
+
+        it.each([
+            `E001${"00".repeat(7)}${userOpHash}`,
+            `E001${"00".repeat(9)}${userOpHash}`,
+            `E001${"00".repeat(8)}${"gg".repeat(32)}`,
+            `E101${"00".repeat(8)}${userOpHash}`,
+            `E201${"00".repeat(8)}${userOpHash}${"00".repeat(8)}`,
+        ])("rejects malformed or unsupported recovery references: %s", (memo) => {
+            const service = createService(ChainId.testXRP);
+
+            expect((service as any).decodeDirectMintingRef(memo)).toEqual({ type: null });
+        });
+
+        it.each(["FE", "E0"])("does not fall back from a present authoritative reference to a %s in Memos[0]", async (opcode) => {
+            const service = createService(ChainId.testXRP);
+            const memo = `${opcode}01${"00".repeat(8)}${userOpHash}`;
+            mockAxiosClient.get.mockResolvedValueOnce({
+                data: {
+                    status: "OK",
+                    data: {
+                        items: [
+                            {
+                                transactionId: "TX1",
+                                transactionType: "Payment",
+                                paymentReference: "not-hex",
+                                response: {
+                                    result: {
+                                        Account: "rUser",
+                                        Destination: "rCoreVault",
+                                        Amount: "1000000",
+                                        Memos: [{ Memo: { MemoData: memo } }],
+                                        meta: { TransactionResult: "tesSUCCESS" },
+                                    },
+                                },
+                            },
+                        ],
+                        offset: 0,
+                        limit: 100,
+                    },
+                },
+            });
+
+            const [transaction] = await service.getTransactionsByBlockRange(1, 1);
+
+            expect(transaction.decodedMemo).toEqual({ type: null });
+        });
+
+        it.each(["FE", "E0"])("uses a %s in Memos[0] when the authoritative reference is absent", async (opcode) => {
+            const service = createService(ChainId.testXRP);
+            const memo = `${opcode}01${"00".repeat(8)}${userOpHash}`;
+            mockAxiosClient.get.mockResolvedValueOnce({
+                data: {
+                    status: "OK",
+                    data: {
+                        items: [
+                            {
+                                transactionId: "TX2",
+                                transactionType: "Payment",
+                                paymentReference: null,
+                                response: {
+                                    result: {
+                                        Account: "rUser",
+                                        Destination: "rCoreVault",
+                                        DestinationTag: 123,
+                                        Amount: "1000000",
+                                        Memos: [{ Memo: { MemoData: memo } }, { Memo: { MemoData: "00" } }],
+                                        meta: { TransactionResult: "tesSUCCESS" },
+                                    },
+                                },
+                            },
+                        ],
+                        offset: 0,
+                        limit: 100,
+                    },
+                },
+            });
+
+            const [transaction] = await service.getTransactionsByBlockRange(1, 1);
+
+            expect(transaction.destinationTag).toBe("123");
+            expect(transaction.decodedMemo).toEqual({
+                walletId: 1,
+                executorFeeUBA: 0n,
+                ...(opcode === "FE" ? { type: "SMART_ACCOUNT", userOpHash: `0x${userOpHash}` } : { type: "RECOVERY", originalTxHash: `0x${userOpHash}` }),
+            });
+        });
+
+        it.each(["FE", "E0"])("never scans a later memo for %s", async (opcode) => {
+            const service = createService(ChainId.testXRP);
+            const memo = `${opcode}01${"00".repeat(8)}${userOpHash}`;
+            mockAxiosClient.get.mockResolvedValueOnce({
+                data: {
+                    status: "OK",
+                    data: {
+                        items: [
+                            {
+                                transactionId: "TX3",
+                                transactionType: "Payment",
+                                response: {
+                                    result: {
+                                        Account: "rUser",
+                                        Destination: "rCoreVault",
+                                        Amount: "1000000",
+                                        Memos: [{ Memo: { MemoData: "00" } }, { Memo: { MemoData: memo } }],
+                                        meta: { TransactionResult: "tesSUCCESS" },
+                                    },
+                                },
+                            },
+                        ],
+                        offset: 0,
+                        limit: 100,
+                    },
+                },
+            });
+
+            const [transaction] = await service.getTransactionsByBlockRange(1, 1);
+
+            expect(transaction.decodedMemo).toEqual({ type: null });
+        });
+    });
 });

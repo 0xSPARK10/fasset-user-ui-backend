@@ -2,6 +2,7 @@
 import { Minting } from "../entities/Minting";
 import { Redemption } from "../entities/Redemption";
 import { DirectMinting, DirectMintingStatus } from "../entities/DirectMinting";
+import { DirectMintingRecoveryPayment } from "../entities/DirectMintingRecoveryPayment";
 import { DirectMintingExecutedEvent } from "../entities/DirectMintingExecutedEvent";
 import { DirectMintingExecutedToSmartAccountEvent } from "../entities/DirectMintingExecutedToSmartAccountEvent";
 import { DirectMintingPaymentTooSmallForFeeEvent } from "../entities/DirectMintingPaymentTooSmallForFeeEvent";
@@ -11,6 +12,7 @@ import { RedemptionWithTagRequestedEvent, RedemptionWithTagStatus } from "../ent
 import { EntityManager, MikroORM } from "@mikro-orm/core";
 import { dateStringToTimestamp } from "src/utils/utils";
 import { Injectable, OnApplicationBootstrap } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { RedeemData } from "src/interfaces/structure";
 import { logger } from "src/logger/winston.logger";
 import { UnderlyingPayment } from "src/entities/UnderlyingPayment";
@@ -24,6 +26,7 @@ import { ContractService } from "./contract.service";
 import { DalService, AttestationNotProved, AttestationProof, OptionalAttestationProof } from "./dal.service";
 import { ITransaction } from "./verifier.service";
 import { FassetConfigService } from "./fasset.config.service";
+import { getBridgeDestinationEid, getBridgeDestinationKind, SmartAccountsService, SmartDirectMintStatusResponse } from "./smart.accounts.service";
 import { IIAssetManager__factory } from "../typechain-ethers-v6";
 import { MintingFacet__factory } from "../typechain-ethers-v6/factories/contracts/assetManager/facets/MintingFacet__factory";
 import { RedemptionDefaultsFacet__factory } from "../typechain-ethers-v6/factories/contracts/assetManager/facets/RedemptionDefaultsFacet__factory";
@@ -36,6 +39,12 @@ import { Interface, ContractTransactionReceipt } from "ethers";
 /* -------------------------------------------------------------------------- */
 
 const MAX_TX_RETRIES = 3;
+
+/** Grace period after discovery or delay expiry before reconciling smart status. */
+const SMART_STATUS_GRACE_MS = 3 * 60_000;
+
+/** Minimum interval between smart-backend status attempts for one candidate. */
+const SMART_STATUS_THROTTLE_MS = 60_000;
 
 /** Escalating gas buffer percentages for each retry attempt (130% → 140% → 150%) */
 const GAS_BUFFER_PERCENTS = [130n, 140n, 150n];
@@ -68,7 +77,9 @@ export class RunnerService implements OnApplicationBootstrap {
         private readonly ethersService: EthersService,
         private readonly contractService: ContractService,
         private readonly dalService: DalService,
-        private readonly fassetConfigService: FassetConfigService
+        private readonly fassetConfigService: FassetConfigService,
+        private readonly configService: ConfigService,
+        private readonly smartAccountsService: SmartAccountsService
     ) {
         // Merge ABIs from IIAssetManager and the facets that define minting/redemption custom errors.
         // IIAssetManager alone does not include facet-level errors (e.g. InvalidCrtId, InvalidRedemptionStatus),
@@ -636,27 +647,171 @@ export class RunnerService implements OnApplicationBootstrap {
     /*                    PROCESS DIRECT MINTINGS                              */
     /* ---------------------------------------------------------------------- */
 
+    private isOftCandidateSource(fasset: string): boolean {
+        const network = this.configService.get<string>("NETWORK");
+        if (network !== "flare" && network !== "coston2") return false;
+        const oftFasset = this.configService.get<string>("APP_TYPE") === "dev" ? "FTestXRP" : "FXRP";
+        return fasset === oftFasset;
+    }
+
+    private isSmartStatusDue(dm: DirectMinting, now: number): boolean {
+        return dm.smartStatusLastCheckedAt === null || now >= Number(dm.smartStatusLastCheckedAt) + SMART_STATUS_THROTTLE_MS;
+    }
+
+    /** Both recovery states need the original action's outcome before execution can complete. */
+    private isRecoveryStatus(status: string): boolean {
+        return status === DirectMintingStatus.AWAITING_RECOVERY || status === DirectMintingStatus.RECOVERY_PENDING;
+    }
+
+    /** Retries early recovery payments and commits each batch's matches atomically. */
+    private async matchRecoveryPayments(fasset: string): Promise<void> {
+        if (!this.isOftCandidateSource(fasset)) return;
+
+        // Use fresh entities so rollback cannot leave the runner with a pending
+        // status that was never committed. Successful changes merge into this.em.
+        await this.em.transactional(
+            async (em) => {
+                const payments = await em.find(DirectMintingRecoveryPayment, { fasset, processed: false }, { orderBy: { id: "ASC" } });
+                for (const payment of payments) {
+                    const dm = await em.findOne(DirectMinting, { txhash: payment.originalTxHash, fasset, mintType: "oft_candidate" });
+                    if (!dm) continue;
+
+                    if (dm.userAddress !== payment.userAddress) {
+                        logger.warn(`Ignoring recovery payment ${payment.txhash} for ${payment.originalTxHash}: XRP sender does not match`);
+                        payment.processed = true;
+                    } else if (dm.processed || dm.status === DirectMintingStatus.RECOVERY_PENDING) {
+                        payment.processed = true;
+                    } else if (dm.status === DirectMintingStatus.AWAITING_RECOVERY) {
+                        dm.status = DirectMintingStatus.RECOVERY_PENDING;
+                        payment.processed = true;
+                    }
+                    // Missing or not-yet-awaiting originals stay queued. Managed changes
+                    // to both records are flushed together when this transaction commits.
+                }
+            },
+            { clear: true }
+        );
+    }
+
+    private isSmartStatusEligible(dm: DirectMinting, now: number): boolean {
+        if (this.isRecoveryStatus(dm.status)) return true;
+        if (dm.status === DirectMintingStatus.INPROGRESS) return now >= Number(dm.timestamp) + SMART_STATUS_GRACE_MS;
+        if (dm.status === DirectMintingStatus.DELAYED && dm.delayTimestamp !== null) {
+            return now >= Number(dm.delayTimestamp) * 1000 + SMART_STATUS_GRACE_MS;
+        }
+        return false;
+    }
+
+    private isAwaitingRecovery(data: unknown): boolean {
+        if (!data || typeof data !== "object") return false;
+        const response = data as SmartDirectMintStatusResponse;
+        return response.status === "awaiting_recovery";
+    }
+
+    private hasSmartStatusShape(data: unknown): boolean {
+        if (!data || typeof data !== "object") return false;
+        const response = data as SmartDirectMintStatusResponse;
+        return (
+            typeof response.type === "string" &&
+            response.type.trim().length > 0 &&
+            typeof response.status === "string" &&
+            response.status.trim().length > 0
+        );
+    }
+
+    private async fetchSmartStatus(dm: DirectMinting, now: number): Promise<SmartDirectMintStatusResponse | null> {
+        // Persist before any outbound request so failures and restarts still
+        // enforce the per-row throttle.
+        dm.smartStatusLastCheckedAt = now;
+        await this.em.persistAndFlush(dm);
+
+        const data = await this.smartAccountsService.getDirectMintStatus(dm.txhash);
+        const destinationEid = dm.destinationEid ?? getBridgeDestinationEid(data);
+        const destinationKind = dm.destinationKind ?? getBridgeDestinationKind(data);
+        if (dm.destinationEid !== destinationEid || dm.destinationKind !== destinationKind) {
+            dm.destinationEid = destinationEid;
+            dm.destinationKind = destinationKind;
+            await this.em.persistAndFlush(dm);
+        }
+        return data;
+    }
+
+    /** Returns whether a local execution event can complete normally. */
+    private async reconcileSmartStatus(dm: DirectMinting, data: SmartDirectMintStatusResponse | null): Promise<boolean> {
+        // Save local execution details even when reusing an earlier destination lookup.
+        await this.em.persistAndFlush(dm);
+        if (data === null) return false;
+        if (this.isAwaitingRecovery(data)) {
+            if (dm.status !== DirectMintingStatus.RECOVERY_PENDING) dm.status = DirectMintingStatus.AWAITING_RECOVERY;
+            await this.em.persistAndFlush(dm);
+        } else if (data.status === "memo_skipped") {
+            dm.status = DirectMintingStatus.RECOVERED;
+            dm.processed = true;
+            await this.em.persistAndFlush(dm);
+        } else if (!this.hasSmartStatusShape(data)) {
+            logger.warn(`Smart-status response for ${dm.txhash} has an unexpected shape`);
+        } else if (!this.isRecoveryStatus(dm.status) && data.type !== "BRIDGE") {
+            await this.em.removeAndFlush(dm);
+        } else if (data.status === "executed") {
+            return true;
+        }
+        return false;
+    }
+
+    private alertMissingOftExecutionMetadata(
+        dm: DirectMinting,
+        eventType: "DirectMintingExecuted" | "DirectMintingExecutedToSmartAccount",
+        evmTxHash: string | null | undefined,
+        executionBlockNumber: number | null
+    ): void {
+        if (dm.mintType !== "oft_candidate" || (evmTxHash != null && executionBlockNumber != null)) return;
+
+        logger.error(
+            JSON.stringify({
+                code: "OFT_HISTORY_MISSING_EXECUTION_METADATA",
+                candidateId: dm.id,
+                xrplTxHash: dm.txhash,
+                fasset: dm.fasset,
+                eventType,
+                evmTxHash: evmTxHash ?? null,
+                executionBlockNumber,
+            })
+        );
+    }
+
     /**
      * Checks unprocessed DirectMinting entities against on-chain events to
      * update their status. Terminal states (EXECUTED, TOO_SMALL, etc.)
      * mark the entity as processed.
      */
     private async processDirectMintings(fasset: string): Promise<void> {
+        await this.matchRecoveryPayments(fasset);
         const directMintings = await this.em.find(DirectMinting, { processed: false, fasset }, { orderBy: { id: "ASC" } });
 
         for (const dm of directMintings) {
             try {
                 // Match events by transactionId (the XRP tx hash stored on the DirectMinting)
                 const txId = dm.txhash;
+                const now = Date.now();
+                const oftCandidate = dm.mintType === "oft_candidate" && this.isOftCandidateSource(fasset);
+                const smartStatusDue = oftCandidate && this.isSmartStatusDue(dm, now);
+                const inRecovery = this.isRecoveryStatus(dm.status) && oftCandidate;
+                let smartStatusRequest: Promise<SmartDirectMintStatusResponse | null> | undefined;
+                const getSmartStatus = () => (smartStatusRequest ??= this.fetchSmartStatus(dm, now));
+
+                if (smartStatusDue && (dm.destinationEid === null || dm.destinationKind === null)) await getSmartStatus();
 
                 // Check for DirectMintingExecuted event matching this specific transaction
                 const executedEvent = await this.em.findOne(DirectMintingExecutedEvent, { transactionId: txId, fasset });
                 if (executedEvent) {
-                    dm.status = DirectMintingStatus.EXECUTED;
+                    if (inRecovery && !smartStatusDue) continue;
+                    this.alertMissingOftExecutionMetadata(dm, "DirectMintingExecuted", executedEvent.txhash, executedEvent.blockNumber);
                     dm.mintedAmountUBA = executedEvent.mintedAmountUBA;
                     dm.mintingFeeUBA = executedEvent.mintingFeeUBA;
                     dm.executorFeeUBA = executedEvent.executorFeeUBA;
                     dm.evm_txhash = executedEvent.txhash ?? null;
+                    if (inRecovery && !(await this.reconcileSmartStatus(dm, await getSmartStatus()))) continue;
+                    dm.status = DirectMintingStatus.EXECUTED;
                     dm.processed = true;
                     await this.em.persistAndFlush(dm);
                     continue;
@@ -665,10 +820,18 @@ export class RunnerService implements OnApplicationBootstrap {
                 // Check for DirectMintingExecutedToSmartAccount event
                 const smartAcctEvent = await this.em.findOne(DirectMintingExecutedToSmartAccountEvent, { transactionId: txId, fasset });
                 if (smartAcctEvent) {
-                    dm.status = DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT;
+                    if (inRecovery && !smartStatusDue) continue;
+                    this.alertMissingOftExecutionMetadata(
+                        dm,
+                        "DirectMintingExecutedToSmartAccount",
+                        smartAcctEvent.txhash,
+                        smartAcctEvent.blockNumber
+                    );
                     dm.mintedAmountUBA = smartAcctEvent.mintedAmountUBA;
                     dm.mintingFeeUBA = smartAcctEvent.mintingFeeUBA;
                     dm.evm_txhash = smartAcctEvent.txhash ?? null;
+                    if (inRecovery && !(await this.reconcileSmartStatus(dm, await getSmartStatus()))) continue;
+                    dm.status = DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT;
                     dm.processed = true;
                     await this.em.persistAndFlush(dm);
                     continue;
@@ -688,11 +851,19 @@ export class RunnerService implements OnApplicationBootstrap {
                 const delayedEvent = await this.em.findOne(DirectMintingDelayedEvent, { transactionId: txId, fasset });
                 const largeDelayedEvent = await this.em.findOne(LargeDirectMintingDelayedEvent, { transactionId: txId, fasset });
                 if (delayedEvent || largeDelayedEvent) {
-                    dm.status = DirectMintingStatus.DELAYED;
-                    dm.delayTimestamp = delayedEvent ? delayedEvent.executionAllowedAt : largeDelayedEvent.executionAllowedAt;
-                    await this.em.persistAndFlush(dm);
-                    continue;
+                    const delayTimestamp = delayedEvent ? delayedEvent.executionAllowedAt : largeDelayedEvent.executionAllowedAt;
+                    const preserveRecovery = this.isRecoveryStatus(dm.status);
+                    const statusChanged = !preserveRecovery && dm.status !== DirectMintingStatus.DELAYED;
+                    const delayChanged = Number(dm.delayTimestamp) !== Number(delayTimestamp);
+                    if (statusChanged) dm.status = DirectMintingStatus.DELAYED;
+                    if (delayChanged) dm.delayTimestamp = delayTimestamp;
+                    if (statusChanged || delayChanged) await this.em.persistAndFlush(dm);
                 }
+
+                if (dm.delayTimestamp !== null && now < Number(dm.delayTimestamp) * 1000) continue;
+                if (!smartStatusDue || !this.isSmartStatusEligible(dm, now)) continue;
+
+                await this.reconcileSmartStatus(dm, await getSmartStatus());
             } catch (error) {
                 logger.error(`Error in processDirectMintings for ${dm.txhash}:`, error);
                 continue;

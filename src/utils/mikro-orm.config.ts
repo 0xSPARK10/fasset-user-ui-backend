@@ -25,6 +25,7 @@ import { logger } from "src/logger/winston.logger";
 import { OFTRedemptionFailed } from "src/entities/OFTRedemptionFailed";
 import { OFTComposerFeeCollected } from "src/entities/OFTComposerFeeCollected";
 import { DirectMinting } from "src/entities/DirectMinting";
+import { DirectMintingRecoveryPayment } from "src/entities/DirectMintingRecoveryPayment";
 import { DirectMintingExecutedEvent } from "src/entities/DirectMintingExecutedEvent";
 import { DirectMintingExecutedToSmartAccountEvent } from "src/entities/DirectMintingExecutedToSmartAccountEvent";
 import { DirectMintingPaymentTooSmallForFeeEvent } from "src/entities/DirectMintingPaymentTooSmallForFeeEvent";
@@ -62,6 +63,7 @@ if (process.env.DB_TYPE === "sqlite") {
             OFTRedemptionFailed,
             OFTComposerFeeCollected,
             DirectMinting,
+            DirectMintingRecoveryPayment,
             DirectMintingExecutedEvent,
             DirectMintingExecutedToSmartAccountEvent,
             DirectMintingPaymentTooSmallForFeeEvent,
@@ -101,6 +103,7 @@ if (process.env.DB_TYPE === "sqlite") {
             OFTRedemptionFailed,
             OFTComposerFeeCollected,
             DirectMinting,
+            DirectMintingRecoveryPayment,
             DirectMintingExecutedEvent,
             DirectMintingExecutedToSmartAccountEvent,
             DirectMintingPaymentTooSmallForFeeEvent,

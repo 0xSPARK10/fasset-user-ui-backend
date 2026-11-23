@@ -1,6 +1,7 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ethers, FetchRequest } from "ethers";
+import * as cron from "node-cron";
 import {
     AM_REDEMPTION_REQUESTED_EVENT,
     AM_REDEMPTION_WITH_TAG_REQUESTED_EVENT,
@@ -11,6 +12,7 @@ import {
     coston2OFTConfig,
     EndpointV2Events,
     flareOFTConfig,
+    OFTAdapterABI,
     OFTAdapterEvents,
     OFTConfig,
     OFTLogs,
@@ -24,11 +26,18 @@ import { OFTRedemption } from "src/entities/OFTRedemption";
 import { OFTRedemptionFailed } from "src/entities/OFTRedemptionFailed";
 import { OFTComposerFeeCollected } from "src/entities/OFTComposerFeeCollected";
 import { ERC20__factory } from "src/typechain-ethers-v6";
-import { NativeBalanceItemTokenAddress } from "src/interfaces/requestResponse";
+import { NativeBalanceItemTokenAddress, OFTLimitsResponse } from "src/interfaces/requestResponse";
 import { formatBigIntToStringForceDecimals } from "src/utils/utils";
 
+export const OFT_LAST_BLOCK_STATE = "oftLastBlock";
+export const OFT_FIRST_TRUSTED_BLOCK_STATE = "oftFirstTrustedBlock";
+
+const OFT_BLOCK_READ_OFFSET = 30;
+const PACKET_GUID_OFFSET = 81;
+const PACKET_MESSAGE_OFFSET = 113;
+
 @Injectable()
-export class OFTEventReaderService implements OnModuleInit {
+export class OFTEventReaderService implements OnModuleInit, OnModuleDestroy {
     private provider: ethers.JsonRpcProvider;
     private network: string;
     private oftConfig: OFTConfig;
@@ -36,6 +45,10 @@ export class OFTEventReaderService implements OnModuleInit {
     private envType: string;
     private fasset: string;
     private composerContract: ethers.Contract;
+    private adapterContract: ethers.Contract;
+    private limits: OFTLimitsResponse = {};
+    private isRunningLimits: boolean = false;
+    private limitsCron: { stop(): void };
     // In-memory cache of ERC20 metadata (symbol + decimals) for each token
     // address returned by the composer's `getBalances()`. We only fetch metadata
     // once per token address and reuse it on subsequent calls. The symbol is
@@ -62,7 +75,53 @@ export class OFTEventReaderService implements OnModuleInit {
         this.envType = this.configService.get<string>("APP_TYPE");
         this.fasset = this.envType == "dev" ? "FTestXRP" : "FXRP";
         this.composerContract = new ethers.Contract(this.oftConfig.FAssetRedeemComposerAddress, FAssetRedeemComposerABI, this.provider);
+        this.adapterContract = new ethers.Contract(this.oftConfig.OFTAdapterAddress, OFTAdapterABI, this.provider);
         void this.startReadingEvents();
+        await this.updateLimits();
+        this.limitsCron = cron.schedule("*/1 * * * *", () => {
+            void this.updateLimits();
+        });
+    }
+
+    onModuleDestroy(): void {
+        this.limitsCron?.stop();
+    }
+
+    private async updateLimits(): Promise<void> {
+        if (this.isRunningLimits) {
+            return;
+        }
+        this.isRunningLimits = true;
+        try {
+            const limits = await Promise.all(
+                this.oftConfig.DstEids.map(async (dstEid) => {
+                    const [incoming, outgoing] = await Promise.all([
+                        this.adapterContract.getAmountCanBeReceived(dstEid),
+                        this.adapterContract.getAmountCanBeSent(dstEid),
+                    ]);
+                    return [
+                        dstEid,
+                        {
+                            incomingRemainingDrops: incoming[1].toString(),
+                            outgoingRemainingDrops: outgoing[1].toString(),
+                        },
+                    ] as const;
+                })
+            );
+            this.limits = Object.fromEntries(limits);
+        } catch (error) {
+            logger.error("Error fetching OFT limits:", error);
+        } finally {
+            this.isRunningLimits = false;
+        }
+    }
+
+    getLimits(): OFTLimitsResponse {
+        return this.limits;
+    }
+
+    async getPaused(): Promise<boolean> {
+        return this.adapterContract.paused();
     }
 
     async fetchEvents(fromBlock: number, toBlock: number): Promise<OFTLogs> {
@@ -187,36 +246,18 @@ export class OFTEventReaderService implements OnModuleInit {
     }
 
     async startReadingEvents(): Promise<void> {
-        const blockReadOffset = 30;
         while (true) {
             try {
                 const lastBlock = (await this.provider.getBlockNumber()) - 4;
-                const lastBlockDB = await this.em.findOne(IndexerState, { name: "oftLastBlock" });
-                let lastEventBlock: number;
-                if (lastBlockDB) {
-                    lastEventBlock = lastBlockDB.lastBlock;
-                } else {
-                    lastEventBlock = lastBlock;
-                    const lbDB = new IndexerState("oftLastBlock", lastBlock);
-                    await this.em.persistAndFlush(lbDB);
-                }
-                if (lastEventBlock >= lastBlock) {
+                const lastEventBlock = await this.initializeIndexerState(lastBlock);
+                if (lastEventBlock > lastBlock) {
                     await new Promise((resolve) => setTimeout(resolve, 2000));
                     continue;
                 }
-                for (let lastBlockRead = lastEventBlock; lastBlockRead <= lastBlock; lastBlockRead += blockReadOffset) {
-                    const logs = await this.fetchEvents(lastBlockRead, Math.min(lastBlockRead + blockReadOffset - 1, lastBlock));
-                    await this.saveOFTSentEvents(logs);
-                    await this.saveOFTReceivedEvents(logs.oftReceived);
-                    await this.saveOFTRedemptions(logs);
-                    await this.saveOFTRedemptionFailedEvents(logs.fAssetRedeemFailed);
-                }
-                if (!lastBlockDB) {
-                    const lbDB = new IndexerState("oftLastBlock", lastBlock + 1);
-                    await this.em.persistAndFlush(lbDB);
-                } else {
-                    lastBlockDB.lastBlock = lastBlock + 1;
-                    await this.em.persistAndFlush(lastBlockDB);
+                for (let rangeStart = lastEventBlock; rangeStart <= lastBlock; rangeStart += OFT_BLOCK_READ_OFFSET) {
+                    const rangeEnd = Math.min(rangeStart + OFT_BLOCK_READ_OFFSET - 1, lastBlock);
+                    const logs = await this.fetchEvents(rangeStart, rangeEnd);
+                    await this.persistRange(logs, rangeStart, rangeEnd);
                 }
             } catch (error) {
                 logger.error(`Error in oft event reader:`, error);
@@ -225,51 +266,91 @@ export class OFTEventReaderService implements OnModuleInit {
         }
     }
 
-    async saveOFTSentEvents(allLogs: OFTLogs): Promise<void> {
+    private async initializeIndexerState(initialBlock: number): Promise<number> {
+        const stateEm = this.orm.em.fork();
+        return stateEm.transactional(async (em) => {
+            let cursor = await em.findOne(IndexerState, { name: OFT_LAST_BLOCK_STATE });
+            if (!cursor) {
+                cursor = new IndexerState(OFT_LAST_BLOCK_STATE, initialBlock);
+                await em.persistAndFlush(cursor);
+            }
+
+            const firstTrustedBlock = await em.findOne(IndexerState, { name: OFT_FIRST_TRUSTED_BLOCK_STATE });
+            if (!firstTrustedBlock) {
+                // Earlier blocks may have been scanned by the former best-effort
+                // writer, so only the current next-unread block starts trusted coverage.
+                await em.persistAndFlush(new IndexerState(OFT_FIRST_TRUSTED_BLOCK_STATE, cursor.lastBlock));
+            }
+
+            return cursor.lastBlock;
+        });
+    }
+
+    /** Persists one complete range and its next-unread cursor in the same transaction. */
+    async persistRange(logs: OFTLogs, rangeStart: number, rangeEnd: number): Promise<void> {
+        const rangeEm = this.orm.em.fork();
+        await rangeEm.transactional(async (em) => {
+            const cursor = await em.findOne(IndexerState, { name: OFT_LAST_BLOCK_STATE });
+            if (!cursor || cursor.lastBlock !== rangeStart) {
+                throw new Error(`Unexpected OFT cursor while persisting range ${rangeStart}-${rangeEnd}: ${cursor?.lastBlock ?? "missing"}`);
+            }
+
+            await this.saveOFTSentEvents(logs, em);
+            await this.saveOFTReceivedEvents(logs.oftReceived, em);
+            await this.saveOFTRedemptions(logs, em);
+            await this.saveOFTRedemptionFailedEvents(logs.fAssetRedeemFailed, em);
+
+            cursor.lastBlock = rangeEnd + 1;
+            await em.persistAndFlush(cursor);
+        });
+    }
+
+    async saveOFTSentEvents(allLogs: OFTLogs, em: EntityManager = this.em): Promise<void> {
         const logs = allLogs.oftSent;
-        const packetMap = new Map<string, ethers.Log>();
-        allLogs.packetSent.forEach((p) => packetMap.set(p.transactionHash, p));
+        const packetMap = new Map<string, ethers.LogDescription>();
+        for (const packetLog of allLogs.packetSent) {
+            const parsed = EndpointV2Events.parseLog(packetLog);
+            const guid = this.getPacketGuid(parsed);
+            if (packetMap.has(guid)) {
+                throw new Error(`Multiple PacketSent events found for guid ${guid}`);
+            }
+            packetMap.set(guid, parsed);
+        }
         const now = Date.now();
         for (const log of logs) {
             try {
-                let isToHypercore = false;
-                const packetSentLog = packetMap.get(log.transactionHash);
-                if (!packetSentLog) {
-                    const txReceipt = await log.getTransactionReceipt();
-                    for (const l of txReceipt.logs) {
-                        try {
-                            if (l.topics[0] === EndpointV2Events.getEvent("PacketSent").topicHash) {
-                                const parsed = EndpointV2Events.parseLog(l);
-                                isToHypercore = this.checkPacketSentForComposer(parsed);
-                            }
-                        } catch {}
-                    }
-                } else {
-                    const parsed = EndpointV2Events.parseLog(packetSentLog);
-                    isToHypercore = this.checkPacketSentForComposer(parsed);
-                }
                 const event = OFTAdapterEvents.parseLog(log);
+                const guid = (event.args[0] as string).toLowerCase();
+                const packetSent = packetMap.get(guid);
+                if (!packetSent) {
+                    throw new Error(`Missing PacketSent event for OFTSent guid ${guid}`);
+                }
                 const oftSent = new OFTSent(
                     event.args[0],
                     Number(event.args[1]),
                     event.args[2],
-                    event.args[3].toString(),
-                    event.args[4].toString(),
+                    event.args[3].toString(), // amountSentLD
+                    event.args[4].toString(), // amountReceivedLD
                     this.fasset,
                     now,
                     log.transactionHash,
-                    isToHypercore
+                    this.checkPacketSentForComposer(packetSent)
                 );
-                await this.em.persistAndFlush(oftSent);
+                await em.persistAndFlush(oftSent);
             } catch (error) {
                 logger.error(`'Error in oft send processing:`, error);
+                throw error;
             }
         }
     }
 
+    private getPacketGuid(parsed: ethers.LogDescription): string {
+        return ethers.dataSlice(parsed.args[0], PACKET_GUID_OFFSET, PACKET_MESSAGE_OFFSET).toLowerCase();
+    }
+
     checkPacketSentForComposer(parsed: ethers.LogDescription): boolean {
         const payload = parsed.args[0];
-        const receiver = ethers.dataSlice(payload, 113, 145);
+        const receiver = ethers.dataSlice(payload, PACKET_MESSAGE_OFFSET, PACKET_MESSAGE_OFFSET + 32);
         const receiverAddress = ethers.getAddress(ethers.dataSlice(receiver, 12));
         if (receiverAddress.toLowerCase() === this.oftConfig.HypeComposerAddress) {
             return true;
@@ -277,7 +358,7 @@ export class OFTEventReaderService implements OnModuleInit {
         return false;
     }
 
-    async saveOFTReceivedEvents(logs: ethers.Log[]): Promise<void> {
+    async saveOFTReceivedEvents(logs: ethers.Log[], em: EntityManager = this.em): Promise<void> {
         const now = Date.now();
         for (const log of logs) {
             try {
@@ -291,14 +372,15 @@ export class OFTEventReaderService implements OnModuleInit {
                     now,
                     log.transactionHash
                 );
-                await this.em.persistAndFlush(oftReceived);
+                await em.persistAndFlush(oftReceived);
             } catch (error) {
                 logger.error(`'Error in oft received processing:`, error);
+                throw error;
             }
         }
     }
 
-    async saveOFTRedemptions(allLogs: OFTLogs): Promise<void> {
+    async saveOFTRedemptions(allLogs: OFTLogs, em: EntityManager = this.em): Promise<void> {
         const logs = allLogs.fAssetRedeemed;
         const now = Date.now();
         // Merge both plain and tag AM redemption-request events into a single
@@ -324,8 +406,7 @@ export class OFTEventReaderService implements OnModuleInit {
             systemFeeByRequest.set(key, parsed.args[2].toString());
         }
 
-        // Cache topic0 hashes for branch decoding below.
-        const plainTopic = AM_REDEMPTION_REQUESTED_EVENT.getEvent("RedemptionRequested").topicHash;
+        // Cache the tagged topic hash for branch decoding below.
         const tagTopic = AM_REDEMPTION_WITH_TAG_REQUESTED_EVENT.getEvent("RedemptionWithTagRequested").topicHash;
 
         for (const log of logs) {
@@ -336,23 +417,9 @@ export class OFTEventReaderService implements OnModuleInit {
                 const redeemer = fAssetRedeemedEvent.args[2];
                 const redeemerAccount = fAssetRedeemedEvent.args[3];
 
-                let redemptionReqLogs = redReqMap.get(log.transactionHash);
-                if (!redemptionReqLogs) {
-                    // Fallback: re-fetch the tx receipt and pick out any
-                    // AM redemption-request logs (plain OR tagged) by topic0.
-                    const txReceipt = await log.getTransactionReceipt();
-                    redemptionReqLogs = [];
-                    for (const l of txReceipt.logs) {
-                        try {
-                            if (l.topics[0] === plainTopic || l.topics[0] === tagTopic) {
-                                redemptionReqLogs.push(l);
-                            }
-                        } catch {}
-                    }
-                }
-
+                const redemptionReqLogs = redReqMap.get(log.transactionHash);
                 if (!redemptionReqLogs || redemptionReqLogs.length === 0) {
-                    continue;
+                    throw new Error(`Missing AssetManager redemption request for FAssetRedeemed transaction ${log.transactionHash}`);
                 }
 
                 for (const reqLog of redemptionReqLogs) {
@@ -381,10 +448,11 @@ export class OFTEventReaderService implements OnModuleInit {
                         destinationTag, // destinationTag (null unless tag event)
                         systemRedemptionFeeUBA
                     );
-                    await this.em.persistAndFlush(oftRedemption);
+                    await em.persistAndFlush(oftRedemption);
                 }
             } catch (error) {
                 logger.error(`Error in oft redemption processing:`, error);
+                throw error;
             }
         }
 
@@ -400,15 +468,16 @@ export class OFTEventReaderService implements OnModuleInit {
                 const composerFeeRecipient = event.args[2];
                 const composerFee = event.args[3].toString();
                 const row = new OFTComposerFeeCollected(guid, srcEid, composerFeeRecipient, composerFee, this.fasset, now, log.transactionHash);
-                await this.em.persistAndFlush(row);
+                await em.persistAndFlush(row);
             } catch (error) {
                 logger.error(`Error in oft composer fee processing:`, error);
+                throw error;
             }
         }
     }
 
     /** Parses FAssetRedeemFailed logs and persists each as an OFTRedemptionFailed entity. */
-    async saveOFTRedemptionFailedEvents(logs: ethers.Log[]): Promise<void> {
+    async saveOFTRedemptionFailedEvents(logs: ethers.Log[], em: EntityManager = this.em): Promise<void> {
         const now = Date.now();
         for (const log of logs) {
             try {
@@ -423,9 +492,10 @@ export class OFTEventReaderService implements OnModuleInit {
                     event.args[3], // personalRedeemerAddress
                     Number(event.args[1]) // srcEid
                 );
-                await this.em.persistAndFlush(oftRedemptionFailed);
+                await em.persistAndFlush(oftRedemptionFailed);
             } catch (error) {
                 logger.error(`Error in oft redemption failed processing:`, error);
+                throw error;
             }
         }
     }

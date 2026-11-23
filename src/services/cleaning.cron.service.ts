@@ -12,7 +12,8 @@ import { OFTReceived } from "src/entities/OFTReceived";
 import { OFTSent } from "src/entities/OFTSent";
 import { CollateralReservationEvent } from "src/entities/CollateralReservation";
 import { OFTRedemption } from "src/entities/OFTRedemption";
-import { DirectMinting } from "src/entities/DirectMinting";
+import { DirectMinting, DirectMintingStatus } from "src/entities/DirectMinting";
+import { DirectMintingRecoveryPayment } from "src/entities/DirectMintingRecoveryPayment";
 import { DirectMintingExecutedEvent } from "src/entities/DirectMintingExecutedEvent";
 import { DirectMintingExecutedToSmartAccountEvent } from "src/entities/DirectMintingExecutedToSmartAccountEvent";
 import { DirectMintingPaymentTooSmallForFeeEvent } from "src/entities/DirectMintingPaymentTooSmallForFeeEvent";
@@ -111,6 +112,12 @@ export class CleaningService {
             // Clean up direct minting entities
             await this.em.nativeDelete(DirectMinting, {
                 timestamp: { $lt: weekTimeStamp },
+                status: { $nin: [DirectMintingStatus.AWAITING_RECOVERY, DirectMintingStatus.RECOVERY_PENDING] },
+            });
+            // Unmatched recovery payments must survive until their original becomes actionable.
+            await this.em.nativeDelete(DirectMintingRecoveryPayment, {
+                timestamp: { $lt: weekTimeStamp },
+                processed: true,
             });
             await this.em.nativeDelete(DirectMintingExecutedEvent, {
                 timestamp: { $lt: weekTimeStamp },

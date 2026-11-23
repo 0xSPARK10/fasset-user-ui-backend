@@ -45,6 +45,7 @@ jest.mock("src/utils/utils", () => ({
 import { HistoryService } from "../../src/services/userHistory.service";
 import { BotService } from "../../src/services/bot.init.service";
 import { UserService } from "../../src/services/user.service";
+import { DirectMinting } from "../../src/entities/DirectMinting";
 import { Minting } from "../../src/entities/Minting";
 import { IncompleteRedemption } from "../../src/entities/RedemptionIncomplete";
 import { RedemptionRequested } from "../../src/entities/RedemptionRequested";
@@ -466,6 +467,40 @@ describe("HistoryService", () => {
             const dmEntries = result.filter((p) => p.directMinting === true);
             expect(dmEntries).toHaveLength(1);
             expect(dmEntries[0].evm_txhash).toBeNull();
+        });
+
+        it("should exclude only OFT candidates from direct minting progress", async () => {
+            const legacyDirectMinting = {
+                txhash: `0x${"1".repeat(64)}`,
+                userAddress: "rXrpAddress",
+                targetAddress: "0xTarget",
+                mintType: "tag",
+                tagId: "123",
+                amount: "5000000",
+                mintingFeeUBA: "0",
+                executorFeeUBA: "0",
+                mintedAmountUBA: null,
+                status: "INPROGRESS",
+                delayTimestamp: null,
+                timestamp: oneHourAgo,
+                fasset: "FTestXRP",
+                processed: false,
+                evm_txhash: null,
+            };
+
+            mockEm.find.mockImplementation((entity: any, filter: any) => {
+                if (entity === DirectMinting) {
+                    expect(filter.mintType).toEqual({ $ne: "oft_candidate" });
+                    return [legacyDirectMinting];
+                }
+                return [];
+            });
+
+            const result = await service.getProgress("0xUser", "rXrpAddress");
+
+            const directMintEntries = result.filter((entry) => entry.directMinting === true);
+            expect(directMintEntries).toHaveLength(1);
+            expect(directMintEntries[0].txhash).toBe("1".repeat(64).toUpperCase());
         });
 
         it("should handle incomplete redemptions", async () => {

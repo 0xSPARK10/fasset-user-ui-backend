@@ -48,6 +48,7 @@ import { Wallet } from "./entities/Wallet";
 import { EventReaderService } from "./services/event.reader.service";
 import { TimeDataService } from "./services/time.data.service";
 import { OFTModule } from "./oft/oft.module";
+import { OFTFullHistoryController } from "./oft/oft.full-history.controller";
 import { OFTReceived } from "./entities/OFTReceived";
 import { OFTSent } from "./entities/OFTSent";
 import { GuidRedemption } from "./entities/OFTRedemptionGUID";
@@ -59,6 +60,7 @@ import { DalService } from "./services/dal.service";
 import { OFTRedemptionFailed } from "./entities/OFTRedemptionFailed";
 import { OFTComposerFeeCollected } from "./entities/OFTComposerFeeCollected";
 import { DirectMinting } from "./entities/DirectMinting";
+import { DirectMintingRecoveryPayment } from "./entities/DirectMintingRecoveryPayment";
 import { DirectMintingExecutedEvent } from "./entities/DirectMintingExecutedEvent";
 import { DirectMintingExecutedToSmartAccountEvent } from "./entities/DirectMintingExecutedToSmartAccountEvent";
 import { DirectMintingPaymentTooSmallForFeeEvent } from "./entities/DirectMintingPaymentTooSmallForFeeEvent";
@@ -67,6 +69,7 @@ import { LargeDirectMintingDelayedEvent } from "./entities/LargeDirectMintingDel
 import { RedemptionWithTagRequestedEvent } from "./entities/RedemptionWithTagRequestedEvent";
 import { RedemptionAmountIncompleteEvent } from "./entities/RedemptionAmountIncompleteEvent";
 import { DirectMintingScannerService } from "./services/direct.minting.scanner.service";
+import { SmartAccountsService } from "./services/smart.accounts.service";
 
 @Module({
     imports: [
@@ -97,6 +100,7 @@ import { DirectMintingScannerService } from "./services/direct.minting.scanner.s
             OFTRedemptionFailed,
             OFTComposerFeeCollected,
             DirectMinting,
+            DirectMintingRecoveryPayment,
             DirectMintingExecutedEvent,
             DirectMintingExecutedToSmartAccountEvent,
             DirectMintingPaymentTooSmallForFeeEvent,
@@ -126,6 +130,7 @@ import { DirectMintingScannerService } from "./services/direct.minting.scanner.s
         EarnController,
         VersionController,
         WalletController,
+        ...(process.env.NETWORK === "flare" || process.env.NETWORK === "coston2" ? [OFTFullHistoryController] : []),
     ],
     providers: [
         MikroOrmHealthIndicator,
@@ -147,6 +152,7 @@ import { DirectMintingScannerService } from "./services/direct.minting.scanner.s
         FassetConfigService,
         DalService,
         DirectMintingScannerService,
+        SmartAccountsService,
     ],
     exports: [BotService, UserService, PoolService, HistoryService, ContractService, FassetConfigService],
 })

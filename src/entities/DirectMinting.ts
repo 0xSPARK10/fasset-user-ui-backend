@@ -4,6 +4,9 @@ import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 export enum DirectMintingStatus {
     INPROGRESS = "INPROGRESS",
     DELAYED = "DELAYED",
+    AWAITING_RECOVERY = "AWAITING_RECOVERY",
+    RECOVERY_PENDING = "RECOVERY_PENDING",
+    RECOVERED = "RECOVERED",
     EXECUTED = "EXECUTED",
     EXECUTED_TO_SMART_ACCOUNT = "EXECUTED_TO_SMART_ACCOUNT",
     MINTING_PAYMENT_TOO_SMALL_FOR_FEE = "MINTING_PAYMENT_TOO_SMALL_FOR_FEE",
@@ -54,6 +57,16 @@ export class DirectMinting {
     @Property({ type: "bigint" })
     timestamp: number;
 
+    /** Millisecond timestamp of the most recent smart-backend status attempt. */
+    @Property({ nullable: true, type: "bigint" })
+    smartStatusLastCheckedAt: number | null;
+
+    @Property({ nullable: true })
+    destinationEid: number | null;
+
+    @Property({ nullable: true })
+    destinationKind: string | null;
+
     @Property()
     fasset: string;
 
@@ -86,6 +99,9 @@ export class DirectMinting {
         this.status = DirectMintingStatus.INPROGRESS;
         this.delayTimestamp = null;
         this.timestamp = timestamp;
+        this.smartStatusLastCheckedAt = null;
+        this.destinationEid = null;
+        this.destinationKind = null;
         this.fasset = fasset;
         this.processed = false;
         this.evm_txhash = null;

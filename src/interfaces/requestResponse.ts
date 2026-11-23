@@ -1,7 +1,8 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { RedemptionStatusEnum } from "src/utils/constants";
 import { RedemptionIncomplete } from "./structure";
 import { WalletType } from "src/entities/Wallet";
+import { DirectMintingStatus } from "src/entities/DirectMinting";
 
 export interface CostonExpTokenBalance {
     balance: string;
@@ -795,6 +796,15 @@ export class ComposerFeeResponse {
     composerFeePPM: string;
 }
 
+export class OFTLimitResponse {
+    @ApiProperty({ example: "1000", description: "Remaining incoming rate-limit capacity from this endpoint ID, in drops." })
+    incomingRemainingDrops: string;
+    @ApiProperty({ example: "2000", description: "Remaining outgoing rate-limit capacity to this endpoint ID, in drops." })
+    outgoingRemainingDrops: string;
+}
+
+export type OFTLimitsResponse = Record<string, OFTLimitResponse>;
+
 export class RedemptionFeesResponse {
     @ApiProperty({ example: "10000" })
     composerFeePPM: string;
@@ -811,26 +821,53 @@ export class RedeemerAccountResponse {
     balances: NativeBalanceItemTokenAddress[];
 }
 
-export class OFTHistory {
-    @ApiProperty({ example: "SEND" })
-    action: string;
-    @ApiProperty({ example: 1726125839877 })
-    timestamp: number;
-    @ApiProperty({ example: 1234 })
-    eid: number;
-    @ApiProperty({ example: "0x123" })
+export class OFTSentHistoryDetails {
+    @ApiProperty({ example: "0x456...", description: "LayerZero message GUID." })
+    guid: string;
+    @ApiProperty({ example: 30101, description: "LayerZero destination endpoint ID." })
+    dstEid: number;
+    @ApiProperty({ example: "0x7b7204684854Da846E49dEFd1408b52c4e0E3ce8", description: "Source OFT sender address." })
+    fromAddress: string;
+    @ApiProperty({ example: "10000000", description: "Exact source amount sent, in local decimals." })
+    amountSentLD: string;
+    @ApiProperty({ example: "9900000", description: "Exact quoted destination amount, in local decimals." })
+    amountReceivedLD: string;
+    @ApiProperty({ example: "0x123...", description: "Flare transaction hash containing OFTSent." })
     txhash: string;
+}
+
+export class OFTHistory {
+    @ApiProperty({ enum: ["SEND", "RECEIVE", "REDEEM", "REDEEMFAIL", "DIRECT_MINT_BRIDGE"], example: "SEND" })
+    action: string;
+    @ApiProperty({ example: 1726125839877, description: "History timestamp in milliseconds." })
+    timestamp: number;
+    @ApiProperty({
+        example: 30101,
+        nullable: true,
+        description: "LayerZero endpoint ID; direct mints use the saved Smart Accounts destination EID until OFTSent is indexed, or null if unavailable.",
+    })
+    eid: number | null;
+    @ApiPropertyOptional({
+        example: "ETHEREUM",
+        nullable: true,
+        description: "Saved Smart Accounts bridge destination kind for direct mints; null if unavailable.",
+    })
+    destinationKind?: string | null;
+    @ApiProperty({ example: "0x123", description: "Transaction hash. DIRECT_MINT_BRIDGE uses the uppercase, unprefixed XRPL hash." })
+    txhash: string;
+    @ApiPropertyOptional({ example: "0x456...", description: "LayerZero message GUID for RECEIVE, REDEEM, and REDEEMFAIL entries." })
+    guid?: string;
     @ApiProperty({ example: "660" })
     amountSent?: string;
     @ApiProperty({ example: "660" })
     amountReceived?: string;
     @ApiProperty({ example: "660" })
     amount: string;
-    @ApiProperty({ example: true })
-    toHypercore?: boolean;
+    @ApiPropertyOptional({ example: true, nullable: true, description: "Whether the OFT destination is HyperCore; null before a direct-mint OFTSent match." })
+    toHypercore?: boolean | null;
     @ApiProperty({ example: "FTestXRP" })
     fasset: string;
-    @ApiProperty({ example: true })
+    @ApiProperty({ example: true, description: "Whether source processing is complete; this is not a success or LayerZero delivery indicator." })
     status: boolean;
     @ApiProperty({ example: false })
     defaulted?: boolean;
@@ -852,6 +889,28 @@ export class OFTHistory {
     remainingAmountUBA?: string;
     @ApiProperty({ example: true })
     redemptionBlocked?: boolean;
+    @ApiPropertyOptional({ example: true, description: "Whether the displayed direct-mint amount is estimated rather than sourced from OFTSent." })
+    amountEstimated?: boolean;
+    @ApiPropertyOptional({ example: true, description: "Whether this entry represents a direct mint." })
+    directMinting?: boolean;
+    @ApiPropertyOptional({
+        enum: DirectMintingStatus,
+        example: DirectMintingStatus.DELAYED,
+        description: "Source direct-mint lifecycle status. RECOVERY_PENDING means a matching XRP recovery payment was observed; the original action is not complete yet.",
+    })
+    directMintingStatus?: string;
+    @ApiPropertyOptional({ example: 1726126000, nullable: true, description: "Direct-mint release timestamp in Unix seconds." })
+    delayTimestamp?: number | null;
+    @ApiPropertyOptional({ example: "ABCDEF...", description: "Uppercase, unprefixed XRPL transaction hash for a direct mint." })
+    xrplTxHash?: string;
+    @ApiPropertyOptional({ example: "0x123...", nullable: true, description: "Flare transaction hash of the local resolving execution event." })
+    evmTxHash?: string | null;
+    @ApiPropertyOptional({
+        type: OFTSentHistoryDetails,
+        nullable: true,
+        description: "Matched source OFTSent event; null before execution or while the OFT reader is behind.",
+    })
+    oftSent?: OFTSentHistoryDetails | null;
 }
 
 /** Response for the GET /api/directMintingInfo/:fasset endpoint. */

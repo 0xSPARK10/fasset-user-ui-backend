@@ -27,9 +27,26 @@ export interface IBlock {
 interface IndexerTransaction {
     transactionId: string;
     transactionType: string;
-    paymentReference?: string;
+    paymentReference?: string | null;
     response: any;
     isNativePayment?: boolean;
+}
+
+export type DecodedDirectMintingRef =
+    | { type: null }
+    | { type: "DIRECT_MINTING"; recipient: string }
+    | { type: "DIRECT_MINTING_EX"; recipient: string; executor: string }
+    | { type: "RECOVERY"; walletId: number; executorFeeUBA: bigint; originalTxHash: string }
+    | { type: "SMART_ACCOUNT"; walletId: number; executorFeeUBA: bigint; userOpHash: string };
+
+export interface DirectMintingScanTransaction {
+    transactionId: string;
+    sourceAddress: string;
+    destinationAddress: string;
+    amount: string;
+    destinationTag: string | null;
+    decodedMemo: DecodedDirectMintingRef;
+    status: "SUCCESS" | "FAILED";
 }
 
 /**
@@ -520,12 +537,12 @@ export class VerifierService {
      * Returns extended transaction data including destination tags and decoded memo fields
      * for identifying direct minting transactions sent to the Core Vault.
      */
-    async getTransactionsByBlockRange(from: number, to: number): Promise<any[]> {
+    async getTransactionsByBlockRange(from: number, to: number): Promise<DirectMintingScanTransaction[]> {
         return retry(() => this.getTransactionsByBlockRangeInner(from, to), BUSINESS_RETRY_COUNT, BUSINESS_RETRY_DELAY_MS);
     }
 
-    private async getTransactionsByBlockRangeInner(from: number, to: number): Promise<any[]> {
-        const results: any[] = [];
+    private async getTransactionsByBlockRangeInner(from: number, to: number): Promise<DirectMintingScanTransaction[]> {
+        const results: DirectMintingScanTransaction[] = [];
         let offset = 0;
 
         // The indexer paginates — a single unbounded request returns at most
@@ -556,30 +573,11 @@ export class VerifierService {
                 const result = tx.response?.result;
                 if (!result) continue;
                 const destinationTag = result.DestinationTag?.toString() || null;
-                let decodedMemo: { type: string | null; recipient?: string; executor?: string } = { type: null };
 
-                // Try to decode FBPR direct-minting reference. Prefer the top-level
-                // paymentReference that the indexer already extracts — it's the same
-                // byte string as the on-chain memo but normalized by the indexer and
-                // populated uniformly across tx payloads. Fall back to walking
-                // result.Memos only when the top-level field is absent.
-                if (!destinationTag) {
-                    decodedMemo = this.decodeDirectMintingRef(tx.paymentReference);
-                    if (decodedMemo.type === null) {
-                        const memos = result.Memos;
-                        if (memos && Array.isArray(memos)) {
-                            for (const memo of memos) {
-                                const memoData = memo.Memo?.MemoData;
-                                if (!memoData) continue;
-                                const parsed = this.decodeDirectMintingRef(memoData);
-                                if (parsed.type !== null) {
-                                    decodedMemo = parsed;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
+                // The indexer's paymentReference is authoritative when present.
+                // Otherwise only the first memo can select the on-chain route.
+                const reference = tx.paymentReference != null ? tx.paymentReference : result.Memos?.[0]?.Memo?.MemoData;
+                const decodedMemo = this.decodeDirectMintingRef(reference);
 
                 results.push({
                     transactionId: tx.transactionId,
@@ -630,13 +628,44 @@ export class VerifierService {
      *   - recipient = bytes [8:28]; on-chain requires target != address(0).
      *   - executor  = bytes [28:48].
      *
+     * SMART_ACCOUNT (42 bytes): packed bytes, length strictly 42.
+     *   - opcode(1) = 0xFE
+     *   - walletId(1)
+     *   - executorFeeUBA(8), uint64 big-endian
+     *   - userOpHash(32)
+     *
+     * RECOVERY (42 bytes): the 0xE0 ignore-memo instruction has the same header
+     * as SMART_ACCOUNT, followed by the original XRP transaction hash (32 bytes).
+     * It submits a recovery attempt; it does not confirm the original execution.
+     *
      * Accepts hex with or without the 0x prefix. Returns { type: null } for
      * anything that doesn't exactly match.
      */
-    private decodeDirectMintingRef(ref: string | null | undefined): { type: string | null; recipient?: string; executor?: string } {
+    private decodeDirectMintingRef(ref: string | null | undefined): DecodedDirectMintingRef {
         if (!ref) return { type: null };
         const body = (ref.startsWith("0x") || ref.startsWith("0X") ? ref.slice(2) : ref).toLowerCase();
         const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+        if (!/^[0-9a-f]+$/.test(body)) return { type: null };
+
+        // 42-byte ignore-memo recovery instruction targeting an original payment
+        if (body.length === 84 && body.startsWith("e0")) {
+            return {
+                type: "RECOVERY",
+                walletId: Number.parseInt(body.slice(2, 4), 16),
+                executorFeeUBA: BigInt(`0x${body.slice(4, 20)}`),
+                originalTxHash: `0x${body.slice(20, 84)}`,
+            };
+        }
+
+        // 42-byte smart-account instruction
+        if (body.length === 84 && body.startsWith("fe")) {
+            return {
+                type: "SMART_ACCOUNT",
+                walletId: Number.parseInt(body.slice(2, 4), 16),
+                executorFeeUBA: BigInt(`0x${body.slice(4, 20)}`),
+                userOpHash: `0x${body.slice(20, 84)}`,
+            };
+        }
 
         // 32-byte DIRECT_MINTING
         if (body.length === 64 && body.startsWith("4642505266410018")) {

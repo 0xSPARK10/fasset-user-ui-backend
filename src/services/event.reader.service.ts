@@ -37,6 +37,7 @@ interface AssetManagerEntry {
 interface DecodedAssetManagerEvent {
     address: string;
     transactionHash: string;
+    blockNumber: number;
     parsed: LogDescription;
 }
 
@@ -83,6 +84,43 @@ export class EventReaderService implements OnApplicationBootstrap {
 
         // Reuse one shared Interface instance for decoding all AssetManager events
         this.iface = IIAssetManager__factory.createInterface();
+    }
+
+    private async repairExecutionMetadata(
+        existing: DirectMintingExecutedEvent | DirectMintingExecutedToSmartAccountEvent,
+        eventType: string,
+        transactionId: string,
+        fasset: string,
+        txHash: string,
+        blockNumber: number
+    ): Promise<void> {
+        let repaired = false;
+        const txHashConflict = existing.txhash != null && existing.txhash.toLowerCase() !== txHash.toLowerCase();
+        const blockNumberConflict = existing.blockNumber != null && existing.blockNumber !== blockNumber;
+
+        if (existing.txhash == null) {
+            existing.txhash = txHash;
+            repaired = true;
+        }
+        if (existing.blockNumber == null) {
+            existing.blockNumber = blockNumber;
+            repaired = true;
+        }
+        if (txHashConflict || blockNumberConflict) {
+            logger.error(
+                JSON.stringify({
+                    code: "DIRECT_MINT_EXECUTION_METADATA_CONFLICT",
+                    eventType,
+                    transactionId,
+                    fasset,
+                    storedTxHash: existing.txhash,
+                    logTxHash: txHash,
+                    storedBlockNumber: existing.blockNumber,
+                    logBlockNumber: blockNumber,
+                })
+            );
+        }
+        if (repaired) await this.em.persistAndFlush(existing);
     }
 
     private systemRedemptionFeeKey(address: string, transactionHash: string, requestId: string): string {
@@ -354,8 +392,12 @@ export class EventReaderService implements OnApplicationBootstrap {
                             await this.em.persistAndFlush(redemptionBlocked);
                         } else if (event.name === "DirectMintingExecuted") {
                             const transactionId = (event.args.transactionId as string).toLowerCase();
-                            const count = await this.em.count(DirectMintingExecutedEvent, { transactionId, txhash: txHash });
-                            if (count === 0) {
+                            const existing = await this.em.findOne(
+                                DirectMintingExecutedEvent,
+                                { transactionId, fasset: am.fasset },
+                                { orderBy: { id: "ASC" } }
+                            );
+                            if (!existing) {
                                 const entity = new DirectMintingExecutedEvent(
                                     transactionId,
                                     event.args.targetAddress as string,
@@ -365,14 +407,21 @@ export class EventReaderService implements OnApplicationBootstrap {
                                     (event.args.executorFeeUBA as bigint).toString(),
                                     timestamp,
                                     txHash,
-                                    am.fasset
+                                    am.fasset,
+                                    decoded.blockNumber
                                 );
                                 await this.em.persistAndFlush(entity);
+                            } else {
+                                await this.repairExecutionMetadata(existing, event.name, transactionId, am.fasset, txHash, decoded.blockNumber);
                             }
                         } else if (event.name === "DirectMintingExecutedToSmartAccount") {
                             const transactionId = (event.args.transactionId as string).toLowerCase();
-                            const count = await this.em.count(DirectMintingExecutedToSmartAccountEvent, { transactionId, txhash: txHash });
-                            if (count === 0) {
+                            const existing = await this.em.findOne(
+                                DirectMintingExecutedToSmartAccountEvent,
+                                { transactionId, fasset: am.fasset },
+                                { orderBy: { id: "ASC" } }
+                            );
+                            if (!existing) {
                                 const entity = new DirectMintingExecutedToSmartAccountEvent(
                                     transactionId,
                                     event.args.sourceAddress as string,
@@ -382,9 +431,12 @@ export class EventReaderService implements OnApplicationBootstrap {
                                     event.args.memoData as string,
                                     timestamp,
                                     txHash,
-                                    am.fasset
+                                    am.fasset,
+                                    decoded.blockNumber
                                 );
                                 await this.em.persistAndFlush(entity);
+                            } else {
+                                await this.repairExecutionMetadata(existing, event.name, transactionId, am.fasset, txHash, decoded.blockNumber);
                             }
                         } else if (event.name === "DirectMintingPaymentTooSmallForFee") {
                             const transactionId = (event.args.transactionId as string).toLowerCase();
@@ -497,6 +549,7 @@ export class EventReaderService implements OnApplicationBootstrap {
                     results.push({
                         address: log.address,
                         transactionHash: log.transactionHash,
+                        blockNumber: log.blockNumber,
                         parsed,
                     });
                 }

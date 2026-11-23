@@ -17,6 +17,14 @@ jest.mock("src/logger/winston.logger", () => ({
     logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn() },
 }));
 
+jest.mock("axios", () => ({
+    __esModule: true,
+    default: {
+        create: jest.fn().mockReturnValue({ get: jest.fn() }),
+        isAxiosError: jest.fn((error: any) => error?.isAxiosError === true),
+    },
+}));
+
 jest.mock("ethers", () => {
     class MockContractFactory {}
     return {
@@ -65,8 +73,11 @@ jest.mock("src/utils/utils", () => ({
 /* -------------------------------------------------------------------------- */
 
 import { Test, TestingModule } from "@nestjs/testing";
+import { ConfigService } from "@nestjs/config";
 import { MikroORM, EntityManager } from "@mikro-orm/core";
+import axios from "axios";
 import { RunnerService } from "../../src/services/runner.service";
+import { SmartAccountsService } from "../../src/services/smart.accounts.service";
 import { EthersService } from "../../src/services/ethers.service";
 import { ContractService } from "../../src/services/contract.service";
 import { DalService } from "../../src/services/dal.service";
@@ -74,6 +85,11 @@ import { FassetConfigService } from "../../src/services/fasset.config.service";
 import { RedeemData } from "../../src/interfaces/structure";
 import { RedemptionDefaultEvent as RedemptionDefaultEventEntity } from "../../src/entities/RedemptionDefaultEvent";
 import { RedemptionBlocked } from "../../src/entities/RedemptionBlockedEvent";
+import { DirectMinting, DirectMintingStatus } from "../../src/entities/DirectMinting";
+import { DirectMintingRecoveryPayment } from "../../src/entities/DirectMintingRecoveryPayment";
+import { DirectMintingExecutedEvent } from "../../src/entities/DirectMintingExecutedEvent";
+import { DirectMintingExecutedToSmartAccountEvent } from "../../src/entities/DirectMintingExecutedToSmartAccountEvent";
+import { DirectMintingDelayedEvent } from "../../src/entities/DirectMintingDelayedEvent";
 import { logger } from "../../src/logger/winston.logger";
 
 /* -------------------------------------------------------------------------- */
@@ -91,12 +107,24 @@ const mockEm = {
     persistAndFlush: jest.fn().mockResolvedValue(undefined),
     removeAndFlush: jest.fn().mockResolvedValue(undefined),
     nativeDelete: jest.fn().mockResolvedValue(0),
+    transactional: jest.fn(),
     fork: jest.fn(),
 };
 mockEm.fork.mockReturnValue(mockEm);
 
 /** Minimal MikroORM mock; only em property is needed by the service */
 const mockOrm = { em: mockEm };
+
+const mockSmartAccountsClient = (axios.create as jest.Mock)() as { get: jest.Mock };
+
+const mockConfig: Record<string, string> = {
+    NETWORK: "coston2",
+    APP_TYPE: "dev",
+    SMART_ACCOUNTS_API_URL: "https://smart-accounts.example",
+};
+const mockConfigService = {
+    get: jest.fn((key: string) => mockConfig[key]),
+};
 
 /**
  * Mock verifier that mimics VerifierService methods used by RunnerService.
@@ -176,15 +204,29 @@ describe("RunnerService", () => {
         mockVerifier.getLastFinalizedBlockNumber.mockResolvedValue(100);
         mockVerifier.getBlock.mockResolvedValue({ number: 100, timestamp: 1000000 });
         mockDateStringToTimestamp.mockReturnValue(1000000);
+        Object.assign(mockConfig, {
+            NETWORK: "coston2",
+            APP_TYPE: "dev",
+            SMART_ACCOUNTS_API_URL: "https://smart-accounts.example",
+        });
+        mockEm.find.mockResolvedValue([]);
+        mockEm.findOne.mockResolvedValue(null);
+        mockEm.persistAndFlush.mockResolvedValue(undefined);
+        mockEm.transactional.mockImplementation(async (callback: (em: typeof mockEm) => Promise<unknown>) => callback(mockEm));
+        mockSmartAccountsClient.get.mockResolvedValue({
+            data: { type: "BRIDGE", action: { action: "BRIDGE" }, status: "created" },
+        });
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 RunnerService,
+                SmartAccountsService,
                 { provide: MikroORM, useValue: mockOrm },
                 { provide: EthersService, useValue: mockEthersService },
                 { provide: ContractService, useValue: mockContractService },
                 { provide: DalService, useValue: mockDalService },
                 { provide: FassetConfigService, useValue: mockFassetConfigService },
+                { provide: ConfigService, useValue: mockConfigService },
             ],
         }).compile();
 
@@ -282,6 +324,882 @@ describe("RunnerService", () => {
             await flushMicrotasks();
             expect(timeoutSpy).toHaveBeenCalledTimes(2);
             expect(timeoutSpy).toHaveBeenLastCalledWith(expect.any(Function), 5000);
+        });
+    });
+
+    describe("processDirectMintings smart-status reconciliation", () => {
+        const now = 1_700_000_000_000;
+        const threeMinutes = 3 * 60_000;
+
+        function makeCandidate(overrides: Partial<DirectMinting> = {}): DirectMinting {
+            const candidate = new DirectMinting(
+                `0x${"ab".repeat(32)}`,
+                "rCandidate",
+                null,
+                "oft_candidate",
+                null,
+                "10000000",
+                now - threeMinutes,
+                "FTestXRP"
+            );
+            Object.assign(candidate, { destinationEid: 30101, destinationKind: "ETHEREUM" }, overrides);
+            return candidate;
+        }
+
+        function axiosError(status?: number, code?: string): Error & { isAxiosError: boolean; response?: { status: number }; code?: string } {
+            return Object.assign(new Error("smart status failed"), {
+                isAxiosError: true,
+                response: status === undefined ? undefined : { status },
+                code,
+            });
+        }
+
+        beforeEach(() => {
+            jest.spyOn(Date, "now").mockReturnValue(now);
+            mockEm.findOne.mockResolvedValue(null);
+            jest.spyOn(service as any, "matchRecoveryPayments").mockResolvedValue(undefined);
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it("creates a dedicated ten-second smart-accounts client", () => {
+            expect(axios.create).toHaveBeenCalledWith({
+                baseURL: "https://smart-accounts.example",
+                timeout: 10_000,
+            });
+        });
+
+        it("uses scanner discovery time for the inclusive three-minute grace boundary", async () => {
+            const tooEarly = makeCandidate({ timestamp: now - threeMinutes + 1 });
+            mockEm.find.mockResolvedValueOnce([tooEarly]);
+
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+
+            const eligible = makeCandidate({ timestamp: now - threeMinutes });
+            mockEm.find.mockResolvedValueOnce([eligible]);
+
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it.each(["awaiting_recovery", "memo_skipped", "executed"])(
+            "fills missing destination metadata before the grace period without applying remote status %s",
+            async (status) => {
+                const candidate = makeCandidate({ timestamp: now, destinationEid: null, destinationKind: null });
+                mockEm.find.mockResolvedValue([candidate]);
+                mockSmartAccountsClient.get.mockResolvedValueOnce({
+                    data: { type: "BRIDGE", status, action: { destination_eid: 30110, destination_kind: "HYPER_EVM" } },
+                });
+
+                await (service as any).processDirectMintings("FTestXRP");
+                await (service as any).processDirectMintings("FTestXRP");
+
+                expect(candidate).toMatchObject({
+                    destinationEid: 30110,
+                    destinationKind: "HYPER_EVM",
+                    smartStatusLastCheckedAt: now,
+                    status: DirectMintingStatus.INPROGRESS,
+                    processed: false,
+                });
+                expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+                expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+            }
+        );
+
+        it.each([
+            { destinationEid: null, destinationKind: "ETHEREUM" },
+            { destinationEid: 30101, destinationKind: null },
+        ])("retries missing destination metadata at sixty seconds before the recovery grace period (%p)", async (metadata) => {
+            const candidate = makeCandidate({
+                timestamp: now,
+                ...metadata,
+                smartStatusLastCheckedAt: now - 60_000 + 1,
+            });
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({
+                data: { type: "BRIDGE", status: "created", action: { destination_eid: 30101, destination_kind: "ETHEREUM" } },
+            });
+
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+
+            (Date.now as jest.Mock).mockReturnValue(now + 1);
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.destinationEid).toBe(30101);
+            expect(candidate.destinationKind).toBe("ETHEREUM");
+            expect(candidate.smartStatusLastCheckedAt).toBe(now + 1);
+            expect(candidate.status).toBe(DirectMintingStatus.INPROGRESS);
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+
+            (Date.now as jest.Mock).mockReturnValue(now + 60_001);
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([DirectMintingStatus.DELAYED, DirectMintingStatus.AWAITING_RECOVERY, DirectMintingStatus.RECOVERY_PENDING])(
+            "fills a missing destination kind during an active delay without reconciling %s",
+            async (status) => {
+                const candidate = makeCandidate({ status, destinationKind: null });
+                const executionAllowedAt = Math.floor(now / 1000) + 60;
+                mockEm.find.mockResolvedValue([candidate]);
+                mockEm.findOne.mockImplementation((entity: unknown) => Promise.resolve(entity === DirectMintingDelayedEvent ? { executionAllowedAt } : null));
+                mockSmartAccountsClient.get.mockResolvedValueOnce({
+                    data: { type: "BRIDGE", status: "memo_skipped", action: { destination_eid: 30101, destination_kind: "ETHEREUM" } },
+                });
+
+                await (service as any).processDirectMintings("FTestXRP");
+
+                expect(candidate).toMatchObject({
+                    destinationEid: 30101,
+                    destinationKind: "ETHEREUM",
+                    status,
+                    delayTimestamp: executionAllowedAt,
+                    processed: false,
+                });
+                expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+                expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+            }
+        );
+
+        it("reuses one status response when destination enrichment and recovery reconciliation are both due", async () => {
+            const candidate = makeCandidate({ destinationEid: null, destinationKind: null });
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({
+                data: { type: "BRIDGE", status: "awaiting_recovery", action: { destination_eid: 30110, destination_kind: "HYPER_EVM" } },
+            });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.destinationEid).toBe(30110);
+            expect(candidate.destinationKind).toBe("HYPER_EVM");
+            expect(candidate.status).toBe(DirectMintingStatus.AWAITING_RECOVERY);
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([
+            { type: "BRIDGE", status: "created" },
+            { type: "BRIDGE", status: "created", action: null },
+            { type: "BRIDGE", status: "created", action: { destination_eid: null, destination_kind: null } },
+            { type: "BRIDGE", status: "created", action: { destination_eid: 30110, destination_kind: "HYPER_EVM" } },
+        ])("preserves saved destination metadata when a later status response omits or changes it (%p)", async (data) => {
+            const candidate = makeCandidate();
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({ data });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.destinationEid).toBe(30101);
+            expect(candidate.destinationKind).toBe("ETHEREUM");
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([false, true])("attempts destination enrichment before completion and stops polling afterwards (failure: %s)", async (lookupFails) => {
+            const candidate = makeCandidate({ timestamp: now, destinationEid: null, destinationKind: null });
+            const event = {
+                mintedAmountUBA: "9000000",
+                mintingFeeUBA: "500000",
+                txhash: `0x${"ef".repeat(32)}`,
+                blockNumber: 12_345,
+            };
+            mockEm.find.mockImplementation((_entity: unknown, where: { processed: boolean }) =>
+                Promise.resolve(candidate.processed === where.processed ? [candidate] : [])
+            );
+            mockEm.findOne.mockImplementation((entity: unknown) => Promise.resolve(entity === DirectMintingExecutedToSmartAccountEvent ? event : null));
+            if (lookupFails) {
+                mockSmartAccountsClient.get.mockRejectedValueOnce(axiosError(500));
+            } else {
+                mockSmartAccountsClient.get.mockResolvedValueOnce({
+                    data: { type: "BRIDGE", status: "created", action: { destination_eid: 30110, destination_kind: "HYPER_EVM" } },
+                });
+            }
+
+            await (service as any).processDirectMintings("FTestXRP");
+            (Date.now as jest.Mock).mockReturnValue(now + 60_000);
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate).toMatchObject({
+                destinationEid: lookupFails ? null : 30110,
+                destinationKind: lookupFails ? null : "HYPER_EVM",
+                status: DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT,
+                processed: true,
+                evm_txhash: event.txhash,
+            });
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it("enforces the inclusive persisted sixty-second throttle boundary", async () => {
+            const throttled = makeCandidate({ smartStatusLastCheckedAt: now - 60_000 + 1 });
+            mockEm.find.mockResolvedValueOnce([throttled]);
+
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+
+            const eligible = makeCandidate({ smartStatusLastCheckedAt: now - 60_000 });
+            mockEm.find.mockResolvedValueOnce([eligible]);
+
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it("persists the attempt before requesting the canonical XRP hash", async () => {
+            const candidate = makeCandidate();
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockImplementationOnce(async (url: string) => {
+                expect(candidate.smartStatusLastCheckedAt).toBe(now);
+                expect(mockEm.persistAndFlush).toHaveBeenCalledWith(candidate);
+                expect(url).toBe(`/api/v3/direct_mint/shortStatus/0x${"AB".repeat(32)}`);
+                return { data: { type: "BRIDGE", status: "created", action: null } };
+            });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not reconcile legacy direct mintings or unsupported OFT sources", async () => {
+            const legacy = makeCandidate({ mintType: "address" });
+            mockEm.find.mockResolvedValueOnce([legacy]);
+            await (service as any).processDirectMintings("FTestXRP");
+
+            const unsupportedFasset = makeCandidate({ fasset: "FXRP" });
+            mockEm.find.mockResolvedValueOnce([unsupportedFasset]);
+            await (service as any).processDirectMintings("FXRP");
+
+            mockConfig.NETWORK = "songbird";
+            const unsupportedNetwork = makeCandidate();
+            mockEm.find.mockResolvedValueOnce([unsupportedNetwork]);
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+        });
+
+        it("persists an active delay and makes no smart-status request", async () => {
+            const candidate = makeCandidate();
+            const executionAllowedAt = Math.floor(now / 1000) + 60;
+            mockEm.find.mockResolvedValue([candidate]);
+            mockEm.findOne.mockImplementation((entity: any) =>
+                Promise.resolve(entity === DirectMintingDelayedEvent ? { executionAllowedAt } : null)
+            );
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.DELAYED);
+            expect(candidate.delayTimestamp).toBe(executionAllowedAt);
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+        });
+
+        it.each([DirectMintingStatus.AWAITING_RECOVERY, DirectMintingStatus.RECOVERY_PENDING])("keeps %s during an active delay", async (status) => {
+            const candidate = makeCandidate({ status });
+            const executionAllowedAt = Math.floor(now / 1000) + 60;
+            mockEm.find.mockResolvedValue([candidate]);
+            mockEm.findOne.mockImplementation((entity: any) =>
+                Promise.resolve(entity === DirectMintingDelayedEvent ? { executionAllowedAt } : null)
+            );
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(status);
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+        });
+
+        it("reconciles DELAYED only at three minutes after delayTimestamp", async () => {
+            const tooEarly = makeCandidate({
+                status: DirectMintingStatus.DELAYED,
+                delayTimestamp: (now - threeMinutes + 1) / 1000,
+            });
+            mockEm.find.mockResolvedValueOnce([tooEarly]);
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+
+            const eligible = makeCandidate({
+                status: DirectMintingStatus.DELAYED,
+                delayTimestamp: (now - threeMinutes) / 1000,
+            });
+            mockEm.find.mockResolvedValueOnce([eligible]);
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([DirectMintingStatus.AWAITING_RECOVERY, DirectMintingStatus.RECOVERY_PENDING])("polls %s after delay expiry", async (status) => {
+            const candidate = makeCandidate({
+                status,
+                timestamp: now,
+                delayTimestamp: now / 1000 - 1,
+            });
+            mockEm.find.mockResolvedValue([candidate]);
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([
+            { type: "BRIDGE", action: { action: "BRIDGE" } },
+            { type: "BRIDGE", action: { action: "CUSTOM" } },
+            { type: "BRIDGE" },
+            { type: "CUSTOM", action: { action: "CUSTOM" } },
+            { type: "CUSTOM" },
+            {},
+        ])("sets recovery regardless of type/action (%p) and ignores payload execution hints", async (data) => {
+            const candidate = makeCandidate();
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({
+                data: {
+                    ...data,
+                    status: "awaiting_recovery",
+                    tx_hash: `0x${"cd".repeat(32)}`,
+                    payload: { type: "RecoveryMemo", memo: "must-not-be-copied" },
+                },
+            });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.AWAITING_RECOVERY);
+            expect(candidate.processed).toBe(false);
+            expect(candidate.evm_txhash).toBeNull();
+            expect(mockEm.persistAndFlush).toHaveBeenLastCalledWith(candidate);
+            expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+        });
+
+        it.each(["BRIDGE", "CUSTOM", "VAULT_DEPOSIT", "MINT_AND_SUPPLY"])("uses the short-status source recovery state for %s with no action", async (type) => {
+            const candidate = makeCandidate({ destinationEid: null, destinationKind: null });
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({ data: { type, status: "awaiting_recovery", action: null } });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate).toMatchObject({
+                status: DirectMintingStatus.AWAITING_RECOVERY,
+                processed: false,
+                destinationEid: null,
+                destinationKind: null,
+                evm_txhash: null,
+            });
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+            expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            [DirectMintingStatus.INPROGRESS, "BRIDGE"],
+            [DirectMintingStatus.INPROGRESS, "MINTING"],
+            [DirectMintingStatus.INPROGRESS, "CUSTOM"],
+            [DirectMintingStatus.AWAITING_RECOVERY, "BRIDGE"],
+            [DirectMintingStatus.RECOVERY_PENDING, "BRIDGE"],
+        ])("completes memo-skipped recovery from %s before filtering type %s and stops polling", async (status, type) => {
+            const candidate = makeCandidate({ status });
+            mockEm.find.mockImplementation((_entity: unknown, where: { processed: boolean }) =>
+                Promise.resolve(candidate.processed === where.processed ? [candidate] : [])
+            );
+            mockSmartAccountsClient.get.mockResolvedValueOnce({
+                data: { type, status: "memo_skipped", action: null },
+            });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.RECOVERED);
+            expect(candidate.processed).toBe(true);
+            expect(candidate.evm_txhash).toBeNull();
+            expect(mockEm.persistAndFlush).toHaveBeenLastCalledWith(candidate);
+            expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+
+            (Date.now as jest.Mock).mockReturnValue(now + 60_000);
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(mockEm.find).toHaveBeenLastCalledWith(DirectMinting, { processed: false, fasset: "FTestXRP" }, { orderBy: { id: "ASC" } });
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([
+            ["malformed", null],
+            ["missing type", { status: "created" }],
+            ["invalid type", { type: 123, status: "created" }],
+            ["empty type", { type: "", status: "created" }],
+            ["whitespace type", { type: " ", status: "created" }],
+            ["missing status", { type: "CUSTOM" }],
+            ["invalid status", { type: "CUSTOM", status: 123 }],
+            ["empty status", { type: "CUSTOM", status: "" }],
+            ["whitespace status", { type: "CUSTOM", status: " " }],
+            ["bridge without action", { type: "BRIDGE", status: "created" }],
+            ["bridge without destination", { type: "BRIDGE", status: "created", action: null }],
+            ["unconfirmed short execution", { type: "BRIDGE", status: "executed", action: null }],
+            ["other bridge status", { type: "BRIDGE", action: { action: "CUSTOM" }, status: "executed" }],
+        ])("preserves local state for a %s 200 response", async (_name, data) => {
+            const candidate = makeCandidate();
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({ data });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.INPROGRESS);
+            expect(candidate.processed).toBe(false);
+            expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            { type: "CUSTOM", status: "created", action: null },
+            { type: "MINT_AND_SUPPLY", status: "created", action: null },
+            { type: "CUSTOM", action: { action: "BRIDGE" }, status: "executed" },
+        ])("deletes only the non-bridge candidate without recovery (%p)", async (data) => {
+            const candidate = makeCandidate();
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({ data });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(mockEm.removeAndFlush).toHaveBeenCalledTimes(1);
+            expect(mockEm.removeAndFlush).toHaveBeenCalledWith(candidate);
+            expect(mockEm.nativeDelete).not.toHaveBeenCalled();
+        });
+
+        it.each([DirectMintingStatus.AWAITING_RECOVERY, DirectMintingStatus.RECOVERY_PENDING])("keeps %s after non-bridge status", async (status) => {
+            const candidate = makeCandidate({ status });
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({ data: { type: "CUSTOM", status: "created" } });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+            expect(candidate.status).toBe(status);
+            expect(candidate.processed).toBe(false);
+            expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            null,
+            { type: "BRIDGE", status: "awaiting_recovery" },
+            { type: "BRIDGE", status: "created" },
+            { type: "BRIDGE", status: "delayed" },
+            { type: "BRIDGE", status: "executed" },
+            { type: "BRIDGE", status: "unknown" },
+            { status: "executed" },
+        ])("keeps a newly pending recovery unprocessed without local execution evidence (%p)", async (data) => {
+            const candidate = makeCandidate({ status: DirectMintingStatus.RECOVERY_PENDING, timestamp: now });
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({ data });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.RECOVERY_PENDING);
+            expect(candidate.processed).toBe(false);
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledWith(`/api/v3/direct_mint/shortStatus/0x${"AB".repeat(32)}`);
+            expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ["400", axiosError(400)],
+            ["404", axiosError(404)],
+            ["429", axiosError(429)],
+            ["500", axiosError(500)],
+            ["timeout", axiosError(undefined, "ECONNABORTED")],
+        ])("preserves local state and the persisted throttle after %s", async (_name, error) => {
+            const candidate = makeCandidate({ destinationEid: null });
+            mockEm.find.mockResolvedValue([candidate]);
+            mockSmartAccountsClient.get.mockRejectedValueOnce(error);
+
+            await (service as any).processDirectMintings("FTestXRP");
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.INPROGRESS);
+            expect(candidate.smartStatusLastCheckedAt).toBe(now);
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+            expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+        });
+
+        it("alerts and throttles an invalid stored XRP hash without making a request", async () => {
+            const candidate = makeCandidate({ txhash: "not-a-hash" });
+            mockEm.find.mockResolvedValue([candidate]);
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.smartStatusLastCheckedAt).toBe(now);
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("invalid stored XRP hash"));
+        });
+
+        it("continues with later candidates after one smart-status failure", async () => {
+            const first = makeCandidate({ txhash: `0x${"11".repeat(32)}` });
+            const second = makeCandidate({ txhash: `0x${"22".repeat(32)}` });
+            mockEm.find.mockResolvedValue([first, second]);
+            mockSmartAccountsClient.get
+                .mockRejectedValueOnce(axiosError(404))
+                .mockResolvedValueOnce({ data: { type: "BRIDGE", action: { action: "BRIDGE" }, status: "awaiting_recovery" } });
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(2);
+            expect(first.status).toBe(DirectMintingStatus.INPROGRESS);
+            expect(second.status).toBe(DirectMintingStatus.AWAITING_RECOVERY);
+        });
+
+        it.each([false, true])("continues with later candidates after deletion (failure: %s)", async (deletionFails) => {
+            const first = makeCandidate({ txhash: `0x${"11".repeat(32)}` });
+            const second = makeCandidate({ txhash: `0x${"22".repeat(32)}` });
+            mockEm.find.mockResolvedValue([first, second]);
+            mockSmartAccountsClient.get
+                .mockResolvedValueOnce({ data: { type: "CUSTOM", status: "created" } })
+                .mockResolvedValueOnce({ data: { type: "BRIDGE", status: "awaiting_recovery" } });
+            if (deletionFails) mockEm.removeAndFlush.mockRejectedValueOnce(new Error("Deletion failed"));
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(mockEm.removeAndFlush).toHaveBeenCalledTimes(1);
+            expect(mockEm.removeAndFlush).toHaveBeenCalledWith(first);
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(2);
+            expect(second.status).toBe(DirectMintingStatus.AWAITING_RECOVERY);
+        });
+
+        it("keeps event-first completion for candidates that are not awaiting recovery", async () => {
+            const candidate = makeCandidate();
+            const event = {
+                mintedAmountUBA: "9000000",
+                mintingFeeUBA: "500000",
+                txhash: `0x${"ef".repeat(32)}`,
+                blockNumber: 12_345,
+            };
+            mockEm.find.mockResolvedValue([candidate]);
+            mockEm.findOne.mockImplementation((entity: any) =>
+                Promise.resolve(entity === DirectMintingExecutedToSmartAccountEvent ? event : null)
+            );
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT);
+            expect(candidate.evm_txhash).toBe(event.txhash);
+            expect(candidate.processed).toBe(true);
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+        });
+
+        describe.each([
+            [DirectMintingStatus.AWAITING_RECOVERY, "ordinary", DirectMintingExecutedEvent, DirectMintingStatus.EXECUTED],
+            [DirectMintingStatus.AWAITING_RECOVERY, "smart-account", DirectMintingExecutedToSmartAccountEvent, DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT],
+            [DirectMintingStatus.RECOVERY_PENDING, "ordinary", DirectMintingExecutedEvent, DirectMintingStatus.EXECUTED],
+            [DirectMintingStatus.RECOVERY_PENDING, "smart-account", DirectMintingExecutedToSmartAccountEvent, DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT],
+        ] as const)("%s with an indexed %s execution", (recoveryStatus, _name, eventModel, executedStatus) => {
+            let candidate: DirectMinting;
+            const event = {
+                mintedAmountUBA: "9000000",
+                mintingFeeUBA: "500000",
+                executorFeeUBA: "500000",
+                txhash: `0x${"ef".repeat(32)}`,
+                blockNumber: 12_345,
+            };
+
+            beforeEach(() => {
+                candidate = makeCandidate({ status: recoveryStatus });
+                mockEm.find.mockResolvedValue([candidate]);
+                mockEm.findOne.mockImplementation((entity: unknown) => Promise.resolve(entity === eventModel ? event : null));
+            });
+
+            it("keeps the recovered status and local execution metadata when the event arrives first", async () => {
+                mockSmartAccountsClient.get.mockResolvedValueOnce({ data: { type: "BRIDGE", status: "memo_skipped" } });
+
+                await (service as any).processDirectMintings("FTestXRP");
+
+                expect(candidate).toMatchObject({
+                    status: DirectMintingStatus.RECOVERED,
+                    processed: true,
+                    evm_txhash: event.txhash,
+                    mintedAmountUBA: event.mintedAmountUBA,
+                    mintingFeeUBA: event.mintingFeeUBA,
+                });
+                expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+                expect(mockEm.persistAndFlush).toHaveBeenLastCalledWith(candidate);
+                expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+            });
+
+            it.each([
+                ["awaiting recovery", { type: "BRIDGE", status: "awaiting_recovery" }],
+                ["replay pending", { type: "BRIDGE", status: "awaiting_recovery", payload: { type: "RecoveryReplayPending" } }],
+                ["unrecognized status", { type: "BRIDGE", status: "unknown" }],
+                ["malformed response", null],
+                ["incomplete execution response", { status: "executed" }],
+            ])("keeps the record pending for %s", async (_description, data) => {
+                mockSmartAccountsClient.get.mockResolvedValueOnce({ data });
+
+                await (service as any).processDirectMintings("FTestXRP");
+
+                expect(candidate.status).toBe(recoveryStatus);
+                expect(candidate.processed).toBe(false);
+                expect(candidate.evm_txhash).toBe(event.txhash);
+                expect(candidate.smartStatusLastCheckedAt).toBe(now);
+                expect(mockEm.removeAndFlush).not.toHaveBeenCalled();
+            });
+
+            it("keeps the record pending after a smart-backend failure", async () => {
+                candidate.destinationEid = null;
+                const persistedStates: Partial<DirectMinting>[] = [];
+                mockEm.persistAndFlush.mockImplementation(async (dm: DirectMinting) => {
+                    persistedStates.push({ ...dm });
+                });
+                mockSmartAccountsClient.get.mockRejectedValueOnce(axiosError(500));
+
+                await (service as any).processDirectMintings("FTestXRP");
+
+                expect(candidate.status).toBe(recoveryStatus);
+                expect(candidate.processed).toBe(false);
+                expect(candidate.smartStatusLastCheckedAt).toBe(now);
+                expect(persistedStates).toContainEqual(
+                    expect.objectContaining({ evm_txhash: event.txhash, mintedAmountUBA: event.mintedAmountUBA, processed: false })
+                );
+                expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+            });
+
+            it("waits for the persisted throttle before checking completion", async () => {
+                candidate.smartStatusLastCheckedAt = now - 60_000 + 1;
+                mockSmartAccountsClient.get.mockResolvedValueOnce({ data: { type: "BRIDGE", status: "memo_skipped" } });
+
+                await (service as any).processDirectMintings("FTestXRP");
+
+                expect(candidate.status).toBe(recoveryStatus);
+                expect(candidate.processed).toBe(false);
+                expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+
+                (Date.now as jest.Mock).mockReturnValue(now + 1);
+                await (service as any).processDirectMintings("FTestXRP");
+
+                expect(candidate.status).toBe(DirectMintingStatus.RECOVERED);
+                expect(candidate.processed).toBe(true);
+                expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+            });
+
+            it.each([
+                [{ destination_eid: 30110, destination_kind: "HYPER_EVM" }, 30110, "HYPER_EVM"],
+                [null, null, null],
+            ])("allows normal completion after a valid short executed response (%p)", async (action, destinationEid, destinationKind) => {
+                candidate.destinationEid = null;
+                candidate.destinationKind = null;
+                mockSmartAccountsClient.get.mockResolvedValueOnce({
+                    data: { type: "BRIDGE", status: "executed", action },
+                });
+
+                await (service as any).processDirectMintings("FTestXRP");
+
+                expect(candidate.status).toBe(executedStatus);
+                expect(candidate.processed).toBe(true);
+                expect(candidate.evm_txhash).toBe(event.txhash);
+                expect(candidate.destinationEid).toBe(destinationEid);
+                expect(candidate.destinationKind).toBe(destinationKind);
+                expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+            });
+        });
+
+        it("alerts but still resolves an OFT candidate with missing execution metadata", async () => {
+            const candidate = makeCandidate({ id: 42 });
+            const event = {
+                mintedAmountUBA: "9000000",
+                mintingFeeUBA: "500000",
+                txhash: null,
+                blockNumber: null,
+            };
+            mockEm.find.mockResolvedValue([candidate]);
+            mockEm.findOne.mockImplementation((entity: any) =>
+                Promise.resolve(entity === DirectMintingExecutedToSmartAccountEvent ? event : null)
+            );
+
+            await (service as any).processDirectMintings("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT);
+            expect(candidate.processed).toBe(true);
+            expect(logger.error).toHaveBeenCalledWith(
+                JSON.stringify({
+                    code: "OFT_HISTORY_MISSING_EXECUTION_METADATA",
+                    candidateId: 42,
+                    xrplTxHash: candidate.txhash,
+                    fasset: "FTestXRP",
+                    eventType: "DirectMintingExecutedToSmartAccount",
+                    evmTxHash: null,
+                    executionBlockNumber: null,
+                })
+            );
+        });
+    });
+
+    describe("recovery payment matching", () => {
+        const now = 1_700_000_000_000;
+        let candidate: DirectMinting;
+        let payment: DirectMintingRecoveryPayment;
+        let transactionEm: { find: jest.Mock; findOne: jest.Mock };
+
+        beforeEach(() => {
+            jest.spyOn(Date, "now").mockReturnValue(now);
+            candidate = new DirectMinting(
+                `0x${"ab".repeat(32)}`,
+                "rCandidate",
+                null,
+                "oft_candidate",
+                null,
+                "10000000",
+                now - 3 * 60_000,
+                "FTestXRP"
+            );
+            candidate.status = DirectMintingStatus.AWAITING_RECOVERY;
+            candidate.destinationEid = 30101;
+            candidate.destinationKind = "ETHEREUM";
+            payment = new DirectMintingRecoveryPayment(`0x${"cd".repeat(32)}`, candidate.txhash, candidate.userAddress, candidate.fasset, now);
+            transactionEm = {
+                find: jest.fn().mockImplementation(() => Promise.resolve(payment.processed ? [] : [payment])),
+                findOne: jest.fn().mockResolvedValue(candidate),
+            };
+            mockEm.transactional.mockImplementation(async (callback: (em: typeof transactionEm) => Promise<unknown>) => callback(transactionEm));
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it("matches the original hash and asset, and atomically marks only the matching sender's action pending", async () => {
+            const original = { ...candidate };
+
+            await (service as any).matchRecoveryPayments("FTestXRP");
+
+            expect(mockEm.transactional).toHaveBeenCalledWith(expect.any(Function), { clear: true });
+            expect(transactionEm.find).toHaveBeenCalledWith(DirectMintingRecoveryPayment, { fasset: "FTestXRP", processed: false }, { orderBy: { id: "ASC" } });
+            expect(transactionEm.findOne).toHaveBeenCalledWith(DirectMinting, {
+                txhash: payment.originalTxHash,
+                fasset: "FTestXRP",
+                mintType: "oft_candidate",
+            });
+            expect(candidate).toEqual({ ...original, status: DirectMintingStatus.RECOVERY_PENDING });
+            expect(payment.processed).toBe(true);
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+        });
+
+        it.each([DirectMintingStatus.INPROGRESS, DirectMintingStatus.DELAYED])("retries early payments for %s after restart", async (status) => {
+            candidate.status = status;
+            transactionEm.findOne.mockResolvedValueOnce(null);
+
+            await (service as any).matchRecoveryPayments("FTestXRP");
+            expect(payment.processed).toBe(false);
+            await (service as any).matchRecoveryPayments("FTestXRP");
+            expect(payment.processed).toBe(false);
+            expect(candidate.status).toBe(status);
+
+            candidate.status = DirectMintingStatus.AWAITING_RECOVERY;
+            const restarted = new RunnerService(
+                mockOrm as any,
+                mockEthersService as any,
+                mockContractService as any,
+                mockDalService as any,
+                mockFassetConfigService as any,
+                mockConfigService as any,
+                new SmartAccountsService(mockConfigService as any)
+            );
+            (restarted as any).em = mockEm;
+
+            await (restarted as any).matchRecoveryPayments("FTestXRP");
+
+            expect(transactionEm.find).toHaveBeenCalledTimes(3);
+            expect(candidate.status).toBe(DirectMintingStatus.RECOVERY_PENDING);
+            expect(payment.processed).toBe(true);
+        });
+
+        it("closes a sender mismatch without changing the original action", async () => {
+            payment.userAddress = "rOtherUser";
+
+            await (service as any).matchRecoveryPayments("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.AWAITING_RECOVERY);
+            expect(candidate.processed).toBe(false);
+            expect(payment.processed).toBe(true);
+            expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("XRP sender does not match"));
+        });
+
+        it.each([
+            [DirectMintingStatus.RECOVERY_PENDING, false],
+            [DirectMintingStatus.RECOVERED, true],
+            [DirectMintingStatus.EXECUTED, true],
+            [DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT, true],
+            [DirectMintingStatus.MINTING_PAYMENT_TOO_SMALL_FOR_FEE, true],
+        ] as const)("closes an attempt targeting %s without changing that action", async (status, processed) => {
+            candidate.status = status;
+            candidate.processed = processed;
+
+            await (service as any).matchRecoveryPayments("FTestXRP");
+
+            expect(candidate.status).toBe(status);
+            expect(candidate.processed).toBe(processed);
+            expect(payment.processed).toBe(true);
+        });
+
+        it("closes multiple recovery payments targeting the same awaiting action in one batch", async () => {
+            const duplicate = new DirectMintingRecoveryPayment(`0x${"ef".repeat(32)}`, candidate.txhash, candidate.userAddress, candidate.fasset, now);
+            transactionEm.find.mockResolvedValueOnce([payment, duplicate]);
+
+            await (service as any).matchRecoveryPayments("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.RECOVERY_PENDING);
+            expect(candidate.processed).toBe(false);
+            expect(payment.processed).toBe(true);
+            expect(duplicate.processed).toBe(true);
+        });
+
+        it("does not process original actions after a matching transaction fails and retries on the next pass", async () => {
+            mockEm.transactional.mockRejectedValueOnce(new Error("transaction failed"));
+
+            await expect((service as any).processDirectMintings("FTestXRP")).rejects.toThrow("transaction failed");
+
+            expect(payment.processed).toBe(false);
+            expect(mockEm.find).not.toHaveBeenCalled();
+            expect(mockSmartAccountsClient.get).not.toHaveBeenCalled();
+
+            await (service as any).matchRecoveryPayments("FTestXRP");
+
+            expect(candidate.status).toBe(DirectMintingStatus.RECOVERY_PENDING);
+            expect(payment.processed).toBe(true);
+        });
+
+        it("matches an early payment on a later pass and polls only the original hash until recovery completes", async () => {
+            candidate.status = DirectMintingStatus.INPROGRESS;
+            mockEm.find.mockImplementation(() => Promise.resolve(candidate.processed ? [] : [candidate]));
+            mockSmartAccountsClient.get.mockResolvedValue({ data: { type: "BRIDGE", status: "awaiting_recovery" } });
+
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(candidate.status).toBe(DirectMintingStatus.AWAITING_RECOVERY);
+            expect(payment.processed).toBe(false);
+
+            (Date.now as jest.Mock).mockReturnValue(now + 5000);
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(candidate.status).toBe(DirectMintingStatus.RECOVERY_PENDING);
+            expect(payment.processed).toBe(true);
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(1);
+
+            (Date.now as jest.Mock).mockReturnValue(now + 60_000);
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(candidate.status).toBe(DirectMintingStatus.RECOVERY_PENDING);
+            expect(candidate.processed).toBe(false);
+
+            (Date.now as jest.Mock).mockReturnValue(now + 120_000);
+            mockSmartAccountsClient.get.mockResolvedValueOnce({ data: { type: "BRIDGE", status: "memo_skipped" } });
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(candidate.status).toBe(DirectMintingStatus.RECOVERED);
+            expect(candidate.processed).toBe(true);
+
+            (Date.now as jest.Mock).mockReturnValue(now + 180_000);
+            await (service as any).processDirectMintings("FTestXRP");
+            expect(mockSmartAccountsClient.get).toHaveBeenCalledTimes(3);
+            expect(mockSmartAccountsClient.get.mock.calls).toEqual([
+                [`/api/v3/direct_mint/shortStatus/0x${"AB".repeat(32)}`],
+                [`/api/v3/direct_mint/shortStatus/0x${"AB".repeat(32)}`],
+                [`/api/v3/direct_mint/shortStatus/0x${"AB".repeat(32)}`],
+            ]);
+            expect(candidate.txhash).toBe(payment.originalTxHash);
+            expect(candidate.amount).toBe("10000000");
+        });
+
+        it.each([
+            ["songbird", "FTestXRP"],
+            ["coston2", "FXRP"],
+        ])("does not match recovery payments for unsupported source %s/%s", async (network, fasset) => {
+            mockConfig.NETWORK = network;
+
+            await (service as any).matchRecoveryPayments(fasset);
+
+            expect(mockEm.transactional).not.toHaveBeenCalled();
+            expect(candidate.status).toBe(DirectMintingStatus.AWAITING_RECOVERY);
         });
     });
 

@@ -1,9 +1,17 @@
 import { Injectable } from "@nestjs/common";
-import { EntityManager } from "@mikro-orm/core";
+import { EntityManager, expr } from "@mikro-orm/core";
+import { ConfigService } from "@nestjs/config";
 import { OFTRedemption } from "src/entities/OFTRedemption";
 import { OFTRedemptionFailed } from "src/entities/OFTRedemptionFailed";
 import { OFTComposerFeeCollected } from "src/entities/OFTComposerFeeCollected";
-import { ComposerFeeResponse, OFTHistory, RedeemerAccountResponse, RedemptionFeesResponse, RedemptionOFT } from "src/interfaces/requestResponse";
+import {
+    ComposerFeeResponse,
+    OFTHistory,
+    OFTLimitsResponse,
+    RedeemerAccountResponse,
+    RedemptionFeesResponse,
+    RedemptionOFT,
+} from "src/interfaces/requestResponse";
 import { OFTSent } from "src/entities/OFTSent";
 import { OFTReceived } from "src/entities/OFTReceived";
 import { formatBigIntToDisplayDecimals, formatBigIntToStringForceDecimals } from "src/utils/utils";
@@ -13,14 +21,39 @@ import { RedemptionDefaultEvent } from "src/entities/RedemptionDefaultEvent";
 import { Collateral } from "src/entities/Collaterals";
 import { Pool } from "src/entities/Pool";
 import { logger } from "src/logger/winston.logger";
-import { OFTEventReaderService } from "./oft.event.reader.service";
+import { OFTEventReaderService, OFT_FIRST_TRUSTED_BLOCK_STATE, OFT_LAST_BLOCK_STATE } from "./oft.event.reader.service";
+import { DirectMinting, DirectMintingStatus } from "src/entities/DirectMinting";
+import { DirectMintingExecutedEvent } from "src/entities/DirectMintingExecutedEvent";
+import { DirectMintingExecutedToSmartAccountEvent } from "src/entities/DirectMintingExecutedToSmartAccountEvent";
+import { IndexerState } from "src/entities/IndexerState";
+
+const OFT_HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const PROVISIONAL_OFT_STATUSES = new Set<string>([
+    DirectMintingStatus.INPROGRESS,
+    DirectMintingStatus.DELAYED,
+    DirectMintingStatus.AWAITING_RECOVERY,
+    DirectMintingStatus.RECOVERY_PENDING,
+    DirectMintingStatus.RECOVERED,
+    DirectMintingStatus.MINTING_PAYMENT_TOO_SMALL_FOR_FEE,
+]);
+
+type DirectMintExecutionEvent = DirectMintingExecutedEvent | DirectMintingExecutedToSmartAccountEvent;
 
 @Injectable()
 export class OFTService {
     constructor(
         private readonly em: EntityManager,
-        private readonly oftEventReaderService: OFTEventReaderService
+        private readonly oftEventReaderService: OFTEventReaderService,
+        private readonly configService: ConfigService
     ) {}
+
+    getLimits(): OFTLimitsResponse {
+        return this.oftEventReaderService.getLimits();
+    }
+
+    getPaused(): Promise<boolean> {
+        return this.oftEventReaderService.getPaused();
+    }
 
     async getRedemptionTxhash(guid: string): Promise<RedemptionOFT> {
         const redemption = await this.em.findOne(OFTRedemption, {
@@ -57,18 +90,229 @@ export class OFTService {
         return { address, balances };
     }
 
-    async getOFTHistory(address: string): Promise<OFTHistory[]> {
-        const now = new Date();
-        const date = new Date(now.getTime() - 7 * 23 * 60 * 60 * 1000).getTime();
-        const [oftSent, oftReceived, oftRedemptions, oftRedemptionsFailed] = await Promise.all([
+    private historyJoinKey(txhash: string, fasset: string): string {
+        return `${txhash.toLowerCase()}:${fasset}`;
+    }
+
+    private alertMissingExecutionMetadata(
+        candidate: DirectMinting,
+        eventType: "DirectMintingExecuted" | "DirectMintingExecutedToSmartAccount",
+        event: DirectMintExecutionEvent | undefined
+    ): void {
+        logger.error(
+            JSON.stringify({
+                code: "OFT_HISTORY_MISSING_EXECUTION_METADATA",
+                candidateId: candidate.id,
+                xrplTxHash: candidate.txhash,
+                fasset: candidate.fasset,
+                eventType,
+                evmTxHash: event?.txhash ?? null,
+                executionBlockNumber: event?.blockNumber ?? null,
+            })
+        );
+    }
+
+    private alertUntrustedCoverage(
+        candidate: DirectMinting,
+        reason: "missing_indexer_state" | "execution_before_first_trusted_block",
+        executionBlockNumber: number,
+        oftLastBlock: IndexerState | undefined,
+        firstTrustedBlock: IndexerState | undefined
+    ): void {
+        logger.error(
+            JSON.stringify({
+                code: "OFT_HISTORY_UNTRUSTED_OFT_COVERAGE",
+                reason,
+                candidateId: candidate.id,
+                xrplTxHash: candidate.txhash,
+                fasset: candidate.fasset,
+                directMintingStatus: candidate.status,
+                executionBlockNumber,
+                oftLastBlock: oftLastBlock?.lastBlock ?? null,
+                firstTrustedBlock: firstTrustedBlock?.lastBlock ?? null,
+            })
+        );
+    }
+
+    private buildDirectMintBridgeHistory(candidate: DirectMinting, executionEvent: DirectMintExecutionEvent | undefined, oftSent: OFTSent | null): OFTHistory {
+        const xrplTxHash = candidate.txhash.replace(/^0x/i, "").toUpperCase();
+        const fees = BigInt(candidate.mintingFeeUBA) + BigInt(candidate.executorFeeUBA);
+        const grossAmount = BigInt(candidate.amount);
+        const estimatedAmount = grossAmount >= fees ? grossAmount - fees : 0n;
+        const amount = oftSent ? BigInt(oftSent.amountSentLD) : estimatedAmount;
+
+        return {
+            action: "DIRECT_MINT_BRIDGE",
+            timestamp: Number(candidate.timestamp),
+            amount: formatBigIntToStringForceDecimals(amount, 2, 6),
+            amountEstimated: oftSent === null,
+            fasset: candidate.fasset,
+            status: candidate.processed,
+            directMinting: true,
+            directMintingStatus: candidate.status,
+            delayTimestamp: candidate.delayTimestamp === null ? null : Number(candidate.delayTimestamp),
+            txhash: xrplTxHash,
+            xrplTxHash,
+            evmTxHash: executionEvent?.txhash ?? candidate.evm_txhash ?? null,
+            eid: oftSent?.dstEid ?? candidate.destinationEid ?? null,
+            destinationKind: candidate.destinationKind ?? null,
+            toHypercore: oftSent?.toHypercore ?? null,
+            oftSent: oftSent
+                ? {
+                      guid: oftSent.guid,
+                      dstEid: oftSent.dstEid,
+                      fromAddress: oftSent.fromAddress,
+                      amountSentLD: oftSent.amountSentLD,
+                      amountReceivedLD: oftSent.amountReceivedLD,
+                      txhash: oftSent.txhash,
+                  }
+                : null,
+        };
+    }
+
+    async getOFTShortHistory(address: string, xrpAddress?: string): Promise<OFTHistory[]> {
+        const history = await this.getOFTHistory(address, xrpAddress);
+        return history.filter((entry) => ["REDEEM", "REDEEMFAIL", "DIRECT_MINT_BRIDGE"].includes(entry.action));
+    }
+
+    async getOFTHistory(address: string, xrpAddress?: string): Promise<OFTHistory[]> {
+        const date = Date.now() - OFT_HISTORY_WINDOW_MS;
+        const oftFasset = this.configService.get<string>("APP_TYPE") === "dev" ? "FTestXRP" : "FXRP";
+        const directMintingsPromise =
+            xrpAddress === undefined
+                ? Promise.resolve([] as DirectMinting[])
+                : this.em.find(DirectMinting, {
+                      userAddress: xrpAddress,
+                      fasset: oftFasset,
+                      mintType: "oft_candidate",
+                      $or: [
+                          { timestamp: { $gte: date } },
+                          { status: { $in: [DirectMintingStatus.AWAITING_RECOVERY, DirectMintingStatus.RECOVERY_PENDING] } },
+                      ],
+                  });
+        const [oftSent, oftReceived, oftRedemptions, oftRedemptionsFailed, directMintings] = await Promise.all([
             this.em.find(OFTSent, { fromAddress: address, timestamp: { $gte: date } }),
             this.em.find(OFTReceived, { toAddress: address, timestamp: { $gte: date } }),
             this.em.find(OFTRedemption, { redeemer: address, timestamp: { $gte: date } }),
             this.em.find(OFTRedemptionFailed, { redeemer: address, timestamp: { $gte: date } }),
+            directMintingsPromise,
         ]);
+
+        const smartCandidateTransactionIds = [
+            ...new Set(
+                directMintings.filter((candidate) => candidate.status === DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT).map((candidate) => candidate.txhash)
+            ),
+        ];
+        const ordinaryCandidateTransactionIds = [
+            ...new Set(directMintings.filter((candidate) => candidate.status === DirectMintingStatus.EXECUTED).map((candidate) => candidate.txhash)),
+        ];
+        const hasExecutedCandidates = smartCandidateTransactionIds.length > 0 || ordinaryCandidateTransactionIds.length > 0;
+        const [smartExecutionEvents, ordinaryExecutionEvents, indexerStates] = await Promise.all([
+            smartCandidateTransactionIds.length > 0
+                ? this.em.find(
+                      DirectMintingExecutedToSmartAccountEvent,
+                      { transactionId: { $in: smartCandidateTransactionIds }, fasset: oftFasset },
+                      { orderBy: { id: "ASC" } }
+                  )
+                : Promise.resolve([] as DirectMintingExecutedToSmartAccountEvent[]),
+            ordinaryCandidateTransactionIds.length > 0
+                ? this.em.find(
+                      DirectMintingExecutedEvent,
+                      { transactionId: { $in: ordinaryCandidateTransactionIds }, fasset: oftFasset },
+                      { orderBy: { id: "ASC" } }
+                  )
+                : Promise.resolve([] as DirectMintingExecutedEvent[]),
+            hasExecutedCandidates
+                ? this.em.find(IndexerState, { name: { $in: [OFT_LAST_BLOCK_STATE, OFT_FIRST_TRUSTED_BLOCK_STATE] } })
+                : Promise.resolve([] as IndexerState[]),
+        ]);
+
+        const smartExecutionByCandidate = new Map<string, DirectMintingExecutedToSmartAccountEvent>();
+        for (const event of smartExecutionEvents) {
+            const key = this.historyJoinKey(event.transactionId, event.fasset);
+            if (!smartExecutionByCandidate.has(key)) smartExecutionByCandidate.set(key, event);
+        }
+        const ordinaryExecutionByCandidate = new Map<string, DirectMintingExecutedEvent>();
+        for (const event of ordinaryExecutionEvents) {
+            const key = this.historyJoinKey(event.transactionId, event.fasset);
+            if (!ordinaryExecutionByCandidate.has(key)) ordinaryExecutionByCandidate.set(key, event);
+        }
+
+        const smartExecutionTxHashes = [
+            ...new Set(
+                [...smartExecutionByCandidate.values()]
+                    .filter((event) => event.txhash != null && event.blockNumber != null)
+                    .map((event) => event.txhash!.toLowerCase())
+            ),
+        ];
+        const matchingOftSent =
+            smartExecutionTxHashes.length > 0
+                ? await this.em.find(
+                      OFTSent,
+                      {
+                          fasset: oftFasset,
+                          [expr<OFTSent>((alias) => `lower(${alias}.txhash)`)]: { $in: smartExecutionTxHashes },
+                      },
+                      { orderBy: { id: "ASC" } }
+                  )
+                : [];
+        const oftSentByExecution = new Map<string, OFTSent>();
+        for (const event of matchingOftSent) {
+            const key = this.historyJoinKey(event.txhash, event.fasset);
+            if (!oftSentByExecution.has(key)) oftSentByExecution.set(key, event);
+        }
+
+        const indexerStateByName = new Map(indexerStates.map((state) => [state.name, state]));
+        const oftLastBlock = indexerStateByName.get(OFT_LAST_BLOCK_STATE);
+        const firstTrustedBlock = indexerStateByName.get(OFT_FIRST_TRUSTED_BLOCK_STATE);
+        const directMintBridgeHistory: OFTHistory[] = [];
+        const selectedOftSentIds = new Set<number>();
+
+        for (const candidate of directMintings) {
+            let executionEvent: DirectMintExecutionEvent | undefined;
+            let selectedOftSent: OFTSent | null = null;
+
+            if (!PROVISIONAL_OFT_STATUSES.has(candidate.status)) {
+                const isSmartAccountExecution = candidate.status === DirectMintingStatus.EXECUTED_TO_SMART_ACCOUNT;
+                const isOrdinaryExecution = candidate.status === DirectMintingStatus.EXECUTED;
+                if (!isSmartAccountExecution && !isOrdinaryExecution) continue;
+
+                const candidateKey = this.historyJoinKey(candidate.txhash, candidate.fasset);
+                executionEvent = isSmartAccountExecution ? smartExecutionByCandidate.get(candidateKey) : ordinaryExecutionByCandidate.get(candidateKey);
+                const eventType = isSmartAccountExecution ? "DirectMintingExecutedToSmartAccount" : "DirectMintingExecuted";
+
+                if (!executionEvent || executionEvent.txhash == null || executionEvent.blockNumber == null) {
+                    this.alertMissingExecutionMetadata(candidate, eventType, executionEvent);
+                } else {
+                    if (isSmartAccountExecution) {
+                        selectedOftSent = oftSentByExecution.get(this.historyJoinKey(executionEvent.txhash, candidate.fasset)) ?? null;
+                    }
+
+                    if (selectedOftSent) {
+                        selectedOftSentIds.add(selectedOftSent.id);
+                    } else if (!oftLastBlock || !firstTrustedBlock) {
+                        this.alertUntrustedCoverage(candidate, "missing_indexer_state", executionEvent.blockNumber, oftLastBlock, firstTrustedBlock);
+                    } else if (executionEvent.blockNumber < firstTrustedBlock.lastBlock) {
+                        this.alertUntrustedCoverage(
+                            candidate,
+                            "execution_before_first_trusted_block",
+                            executionEvent.blockNumber,
+                            oftLastBlock,
+                            firstTrustedBlock
+                        );
+                    } else if (oftLastBlock.lastBlock > executionEvent.blockNumber) {
+                        continue;
+                    }
+                }
+            }
+
+            directMintBridgeHistory.push(this.buildDirectMintBridgeHistory(candidate, executionEvent, selectedOftSent));
+        }
+
         const redeemHashes = [...new Set(oftRedemptions.map((redeem) => redeem.txhash))];
         const history: OFTHistory[] = [];
         for (const sentEvent of oftSent) {
+            if (selectedOftSentIds.has(sentEvent.id)) continue;
             const progress: OFTHistory = {
                 action: "SEND",
                 timestamp: sentEvent.timestamp,
@@ -81,12 +325,14 @@ export class OFTService {
             };
             history.push(progress);
         }
+        history.push(...directMintBridgeHistory);
         for (const recEvent of oftReceived) {
             const progress: OFTHistory = {
                 action: "RECEIVE",
                 timestamp: recEvent.timestamp,
                 amount: formatBigIntToStringForceDecimals(BigInt(recEvent.amountReceivedLD), 2, 6),
                 txhash: recEvent.txhash,
+                guid: recEvent.guid,
                 fasset: recEvent.fasset,
                 status: true,
                 eid: recEvent.srcEid,
@@ -143,9 +389,9 @@ export class OFTService {
                 // amount displayed to the user.
                 const composerFee = composerFeeByGuid.get(tickets[0].guid) ?? 0n;
                 for (const ticket of tickets) {
-                    const redemptionAmount = formatBigIntToDisplayDecimals(
+                    const redemptionAmount = formatBigIntToStringForceDecimals(
                         ticketValueUBA + systemRedemptionFeeUBA + composerFee,
-                        ticket.fasset.includes("XRP") ? 2 : 8,
+                        2,
                         ticket.fasset.includes("XRP") ? 6 : 8
                     );
                     let vaultCollateralRedeemed = "0";
@@ -182,6 +428,7 @@ export class OFTService {
                         status: ticket.processed,
                         defaulted: ticket.defaulted,
                         txhash: ticket.txhash,
+                        guid: ticket.guid,
                         ticketID: ticket.requestId,
                         vaultToken: collateralToken,
                         vaultTokenValueRedeemed: vaultCollateralRedeemed,
@@ -205,6 +452,7 @@ export class OFTService {
                 timestamp: failedEvent.timestamp,
                 amount: formatBigIntToStringForceDecimals(BigInt(failedEvent.amountToRedeemAfterFee), 2, 6),
                 txhash: failedEvent.txhash,
+                guid: failedEvent.guid,
                 fasset: failedEvent.fasset,
                 status: true,
                 eid: failedEvent.srcEid,

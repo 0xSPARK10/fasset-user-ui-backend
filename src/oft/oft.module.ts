@@ -7,5 +7,6 @@ import { OFTRedemptionProcessor } from "./oft.redemption.processor";
 @Module({
     providers: [OFTEventReaderService, OFTService, OFTRedemptionProcessor],
     controllers: [OFTController],
+    exports: [OFTService],
 })
 export class OFTModule {}

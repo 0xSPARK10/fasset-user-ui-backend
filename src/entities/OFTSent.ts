@@ -38,8 +38,8 @@ export class OFTSent {
         guid: string,
         dstEid: number,
         fromAddress: string,
-        amountReceivedLD: string,
         amountSentLD: string,
+        amountReceivedLD: string,
         fasset: string,
         timestamp: number,
         txhash: string,
@@ -48,8 +48,8 @@ export class OFTSent {
         this.guid = guid;
         this.dstEid = dstEid;
         this.fromAddress = fromAddress;
-        this.amountReceivedLD = amountReceivedLD;
         this.amountSentLD = amountSentLD;
+        this.amountReceivedLD = amountReceivedLD;
         this.fasset = fasset;
         this.timestamp = timestamp;
         this.txhash = txhash;
